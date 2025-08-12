@@ -1,0 +1,407 @@
+import React, { useState } from 'react';
+import { Calendar, User, Clock, Plus, Edit3, Trash2, CheckCircle } from 'lucide-react';
+
+const GanttChart = () => {
+  const [tasks, setTasks] = useState([
+    {
+      id: 1,
+      name: "Project Planning",
+      assignee: "Project Manager",
+      startDate: "2025-08-12",
+      endDate: "2025-08-16",
+      progress: 100,
+      status: "completed",
+      dependencies: []
+    },
+    {
+      id: 2,
+      name: "Requirements Gathering",
+      assignee: "Business Analyst",
+      startDate: "2025-08-14",
+      endDate: "2025-08-23",
+      progress: 75,
+      status: "in-progress",
+      dependencies: [1]
+    },
+    {
+      id: 3,
+      name: "System Design",
+      assignee: "Lead Developer",
+      startDate: "2025-08-20",
+      endDate: "2025-09-06",
+      progress: 30,
+      status: "in-progress",
+      dependencies: [2]
+    },
+    {
+      id: 4,
+      name: "Frontend Development",
+      assignee: "Frontend Team",
+      startDate: "2025-08-30",
+      endDate: "2025-09-27",
+      progress: 0,
+      status: "not-started",
+      dependencies: [3]
+    },
+    {
+      id: 5,
+      name: "Backend Development",
+      assignee: "Backend Team",
+      startDate: "2025-09-02",
+      endDate: "2025-10-04",
+      progress: 0,
+      status: "not-started",
+      dependencies: [3]
+    },
+    {
+      id: 6,
+      name: "Testing & QA",
+      assignee: "QA Team",
+      startDate: "2025-09-20",
+      endDate: "2025-10-11",
+      progress: 0,
+      status: "not-started",
+      dependencies: [4, 5]
+    },
+    {
+      id: 7,
+      name: "Deployment",
+      assignee: "DevOps Team",
+      startDate: "2025-10-07",
+      endDate: "2025-10-14",
+      progress: 0,
+      status: "not-started",
+      dependencies: [6]
+    }
+  ]);
+
+  const [editingTask, setEditingTask] = useState(null);
+  const [newTask, setNewTask] = useState({
+    name: '',
+    assignee: '',
+    startDate: '',
+    endDate: '',
+    progress: 0,
+    status: 'not-started'
+  });
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  // Generate months for the year
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+
+  const quarters = [
+    { name: 'Q1', months: [0, 1, 2] },
+    { name: 'Q2', months: [3, 4, 5] },
+    { name: 'Q3', months: [6, 7, 8] },
+    { name: 'Q4', months: [9, 10, 11] }
+  ];
+
+  // Calculate task position and width based on months
+  const getTaskPosition = (task) => {
+    const startDate = new Date(task.startDate);
+    const endDate = new Date(task.endDate);
+    
+    const startMonth = startDate.getMonth();
+    const endMonth = endDate.getMonth();
+    
+    // Calculate position within the year (0-12 months)
+    const startPosition = startMonth + (startDate.getDate() - 1) / 30; // Approximate days in month
+    const endPosition = endMonth + endDate.getDate() / 30;
+    
+    return {
+      left: (startPosition / 12) * 100,
+      width: ((endPosition - startPosition) / 12) * 100
+    };
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'completed': return 'bg-green-500';
+      case 'in-progress': return 'bg-blue-500';
+      case 'not-started': return 'bg-gray-400';
+      case 'delayed': return 'bg-red-500';
+      default: return 'bg-gray-400';
+    }
+  };
+
+  const addTask = () => {
+    if (newTask.name && newTask.startDate && newTask.endDate) {
+      setTasks([...tasks, {
+        ...newTask,
+        id: Math.max(...tasks.map(t => t.id)) + 1,
+        dependencies: []
+      }]);
+      setNewTask({
+        name: '',
+        assignee: '',
+        startDate: '',
+        endDate: '',
+        progress: 0,
+        status: 'not-started'
+      });
+      setShowAddForm(false);
+    }
+  };
+
+  const updateTask = (taskId, updates) => {
+    setTasks(tasks.map(task => 
+      task.id === taskId ? { ...task, ...updates } : task
+    ));
+  };
+
+  const deleteTask = (taskId) => {
+    setTasks(tasks.filter(task => task.id !== taskId));
+  };
+
+  const formatDate = (date) => {
+    return new Date(date).toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+
+  return (
+    <div className="p-6 bg-white">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-gray-800 mb-2">Project Gantt Chart</h1>
+        <div className="flex items-center gap-4 text-sm text-gray-600">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4" />
+            <span>2025 Annual Timeline</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            <span>{tasks.length} Tasks</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="mb-4 flex gap-4 text-sm">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-green-500 rounded"></div>
+          <span>Completed</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-blue-500 rounded"></div>
+          <span>In Progress</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-gray-400 rounded"></div>
+          <span>Not Started</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-red-500 rounded"></div>
+          <span>Delayed</span>
+        </div>
+      </div>
+
+      {/* Add Task Button */}
+      <button
+        onClick={() => setShowAddForm(!showAddForm)}
+        className="mb-4 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+      >
+        <Plus className="w-4 h-4" />
+        Add Task
+      </button>
+
+      {/* Add Task Form */}
+      {showAddForm && (
+        <div className="mb-6 p-4 border rounded-lg bg-gray-50">
+          <h3 className="text-lg font-semibold mb-3">Add New Task</h3>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <input
+              type="text"
+              placeholder="Task name"
+              className="px-3 py-2 border rounded-lg"
+              value={newTask.name}
+              onChange={(e) => setNewTask({...newTask, name: e.target.value})}
+            />
+            <input
+              type="text"
+              placeholder="Assignee"
+              className="px-3 py-2 border rounded-lg"
+              value={newTask.assignee}
+              onChange={(e) => setNewTask({...newTask, assignee: e.target.value})}
+            />
+            <input
+              type="date"
+              className="px-3 py-2 border rounded-lg"
+              value={newTask.startDate}
+              onChange={(e) => setNewTask({...newTask, startDate: e.target.value})}
+            />
+            <input
+              type="date"
+              className="px-3 py-2 border rounded-lg"
+              value={newTask.endDate}
+              onChange={(e) => setNewTask({...newTask, endDate: e.target.value})}
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={addTask}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              Add Task
+            </button>
+            <button
+              onClick={() => setShowAddForm(false)}
+              className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Gantt Chart */}
+      <div className="border rounded-lg overflow-hidden">
+        {/* Quarter Header */}
+        <div className="flex bg-gray-200 border-b">
+          <div className="w-80 p-3 border-r bg-gray-100">
+            <span className="font-semibold text-gray-700">Quarters</span>
+          </div>
+          <div className="flex-1">
+            <div className="flex">
+              {quarters.map((quarter) => (
+                <div
+                  key={quarter.name}
+                  className="flex-1 p-2 text-center font-bold text-gray-700 border-r bg-gradient-to-r from-indigo-100 to-indigo-200"
+                >
+                  {quarter.name}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Timeline Header */}
+        <div className="flex bg-gray-100 border-b">
+          <div className="w-80 p-4 border-r bg-gray-50">
+            <span className="font-semibold text-gray-700">Tasks</span>
+          </div>
+          <div className="flex-1 relative">
+            <div className="flex">
+              {months.map((month, index) => (
+                <div
+                  key={index}
+                  className="flex-1 p-3 text-center text-sm font-medium text-gray-600 border-r hover:bg-gray-200 transition-colors"
+                >
+                  {month}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Tasks */}
+        {tasks.map((task, index) => {
+          const position = getTaskPosition(task);
+          return (
+            <div key={task.id} className={`flex ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+              {/* Task Info */}
+              <div className="w-80 p-4 border-r">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-medium text-gray-800">{task.name}</h4>
+                    <div className="flex items-center gap-2 mt-1">
+                      <User className="w-3 h-3 text-gray-500" />
+                      <span className="text-sm text-gray-600">{task.assignee}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {new Date(task.startDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - {new Date(task.endDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                    </div>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setEditingTask(task.id)}
+                      className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={() => deleteTask(task.id)}
+                      className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${task.progress}%` }}
+                      ></div>
+                    </div>
+                    <span className="text-xs text-gray-600">{task.progress}%</span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Timeline Bar */}
+              <div className="flex-1 relative p-4">
+                <div className="relative h-6">
+                  <div
+                    className={`absolute h-6 rounded-lg ${getStatusColor(task.status)} opacity-80 hover:opacity-100 transition-opacity cursor-pointer`}
+                    style={{
+                      left: `${position.left}%`,
+                      width: `${position.width}%`
+                    }}
+                    title={`${task.name}: ${task.progress}% complete`}
+                  >
+                    <div className="flex items-center h-full px-2">
+                      {task.status === 'completed' && (
+                        <CheckCircle className="w-3 h-3 text-white" />
+                      )}
+                    </div>
+                    {/* Progress overlay */}
+                    <div
+                      className="absolute top-0 left-0 h-full bg-black bg-opacity-20 rounded-lg"
+                      style={{ width: `${task.progress}%` }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Project Summary */}
+      <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+        <h3 className="font-semibold text-blue-800 mb-2">Project Summary</h3>
+        <div className="grid grid-cols-4 gap-4 text-sm">
+          <div>
+            <span className="text-blue-600 font-medium">Total Tasks:</span>
+            <div className="text-lg font-bold text-blue-800">{tasks.length}</div>
+          </div>
+          <div>
+            <span className="text-green-600 font-medium">Completed:</span>
+            <div className="text-lg font-bold text-green-700">
+              {tasks.filter(t => t.status === 'completed').length}
+            </div>
+          </div>
+          <div>
+            <span className="text-blue-600 font-medium">In Progress:</span>
+            <div className="text-lg font-bold text-blue-700">
+              {tasks.filter(t => t.status === 'in-progress').length}
+            </div>
+          </div>
+          <div>
+            <span className="text-gray-600 font-medium">Not Started:</span>
+            <div className="text-lg font-bold text-gray-700">
+              {tasks.filter(t => t.status === 'not-started').length}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default GanttChart;
