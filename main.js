@@ -16,6 +16,8 @@ let chartMinDate = null; // Date
 let chartMaxDate = null; // Date
 let taskResizeWindowBound = false; // ensure window listeners are added only once
 let taskResizeChartBound = false;  // ensure chart mousedown listener is added only once
+// Throttle timestamp for timeline auto-extend during drag
+let taskAutoExtendThrottle = 0;
 
 // Multi-project management
 let projects = [];
@@ -1681,140 +1683,9 @@ function daysBetween(a, b) {
 }
 
 function setupTaskResizeInteractions() {
-    const chart = document.getElementById('ganttChart');
-    if (!chart) return;
-
-    // Delegated mousedown on handles or bar
-    if (!taskResizeChartBound) {
-      chart.addEventListener('mousedown', function(e) {
-        const handle = e.target.closest('.resize-handle');
-        const bar = e.target.closest('.task-bar');
-        if (!handle && !bar) return;
-        if (handle && !handle.parentElement.classList.contains('task-bar')) return;
-
-        const barEl = handle ? handle.parentElement : bar;
-        const trackEl = barEl ? barEl.closest('.timeline-track') : null;
-        if (!barEl || !trackEl) return;
-
-        const taskId = parseInt(barEl.getAttribute('data-task-id'), 10);
-        if (!taskId) return;
-        const t = tasks.find(x => x.id === taskId);
-        if (!t) return;
-
-        const trackRect = trackEl.getBoundingClientRect();
-        const totalDays = Math.max(1, daysBetween(chartMinDate, chartMaxDate));
-        const pxPerDay = trackRect.width / totalDays;
-
-        const origStart = new Date(t.startDate);
-        const origEnd = new Date(t.endDate);
-
-        const type = handle ? 'resize' : 'move';
-        const side = handle ? (handle.classList.contains('left') ? 'left' : 'right') : undefined;
-
-        taskDragState = {
-            type,
-            side,
-            taskId,
-            startX: e.clientX,
-            chartMin: chartMinDate,
-            chartMax: chartMaxDate,
-            pxPerDay,
-            origStart,
-            origEnd,
-            barEl,
-            trackEl,
-            trackRect
-        };
-        barEl.classList.add('resizing');
-        // Disable text selection while dragging
-        document.body.style.userSelect = 'none';
-        e.preventDefault();
-      }, { capture: true });
-      taskResizeChartBound = true;
-    }
-
-    // Mouse move on window for smooth tracking
-    if (!taskResizeWindowBound) {
-      window.addEventListener('mousemove', function(e) {
-        if (!taskDragState) return;
-        const s = taskDragState;
-        const dx = e.clientX - s.startX;
-        const dayDelta = Math.round(dx / s.pxPerDay);
-
-        let newStart = new Date(s.origStart);
-        let newEnd = new Date(s.origEnd);
-
-        if (s.type === 'move') {
-            newStart = addDays(s.origStart, dayDelta);
-            newEnd = addDays(s.origEnd, dayDelta);
-            // Clamp to chart bounds preserving duration
-            const dur = daysBetween(s.origStart, s.origEnd);
-            if (newStart < s.chartMin) {
-                newStart = new Date(s.chartMin);
-                newEnd = addDays(newStart, dur);
-            }
-            if (newEnd > s.chartMax) {
-                newEnd = new Date(s.chartMax);
-                newStart = addDays(newEnd, -dur);
-            }
-        } else if (s.type === 'resize') {
-            if (s.side === 'left') {
-                newStart = addDays(s.origStart, dayDelta);
-                // Enforce at least 1 day duration
-                if (newStart > newEnd) newStart = new Date(newEnd);
-                newStart = clampDate(newStart, s.chartMin, newEnd);
-            } else if (s.side === 'right') {
-                newEnd = addDays(s.origEnd, dayDelta);
-                if (newEnd < newStart) newEnd = new Date(newStart);
-                newEnd = clampDate(newEnd, newStart, s.chartMax);
-            }
-        }
-
-        // Update bar visual position and width in real time
-        const totalMs = s.chartMax - s.chartMin;
-        const startPct = ((newStart - s.chartMin) / totalMs) * 100;
-        const endPct = ((newEnd - s.chartMin) / totalMs) * 100;
-        const widthPct = Math.max(0, endPct - startPct);
-        s.barEl.style.left = `${startPct}%`;
-        s.barEl.style.width = `${widthPct}%`;
-      });
-
-      // Mouse up to commit changes
-      window.addEventListener('mouseup', function() {
-        if (!taskDragState) return;
-        const s = taskDragState;
-        s.barEl.classList.remove('resizing');
-        // Restore selection
-        document.body.style.userSelect = '';
-
-        // Recompute dates from current left/width to minimize rounding drift
-        const leftPct = parseFloat(s.barEl.style.left.replace('%','')) || 0;
-        const widthPct = parseFloat(s.barEl.style.width.replace('%','')) || 0;
-        const totalMs = s.chartMax - s.chartMin;
-        const startMs = s.chartMin.getTime() + (leftPct / 100) * totalMs;
-        const endMs = s.chartMin.getTime() + ((leftPct + widthPct) / 100) * totalMs;
-        let newStart = new Date(startMs);
-        let newEnd = new Date(endMs);
-        // Round to whole days
-        newStart = new Date(newStart.getFullYear(), newStart.getMonth(), newStart.getDate());
-        newEnd = new Date(newEnd.getFullYear(), newEnd.getMonth(), newEnd.getDate());
-        if (newEnd < newStart) newEnd = new Date(newStart);
-
-        const startISO = dateToISO(newStart);
-        const endISO = dateToISO(newEnd);
-
-        // Only commit if changed
-        const t = tasks.find(x => x.id === s.taskId);
-        if (t && (t.startDate !== startISO || t.endDate !== endISO)) {
-            updateTaskDates(s.taskId, startISO, endISO);
-        } else {
-            // Force redraw to clear any visual drift
-            updateChart();
-        }
-        taskDragState = null;
-      });
-      taskResizeWindowBound = true;
-    }
+    // Dynamic task bar interactions are disabled per request.
+    // This function is intentionally a no-op.
+    return;
 }
 
 function createGroupChartHTML(months) {
@@ -2009,9 +1880,7 @@ function createTaskRow(task, months) {
                 <div class="task-bar" data-task-id="${task.id}"
                      style="left: ${left}%; width: ${width}%; background: linear-gradient(45deg, ${task.color}, ${adjustBrightness(task.color, -20)});"
                      title="${task.name}: ${formatDate(task.startDate)} - ${formatDate(task.endDate)} (${duration} day${duration !== 1 ? 's' : ''})">
-                    <span class="resize-handle left" aria-hidden="true"></span>
                     <span class="label">${width > 15 ? task.name : ''}</span>
-                    <span class="resize-handle right" aria-hidden="true"></span>
                 </div>
             </div>
         </div>
