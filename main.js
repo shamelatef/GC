@@ -258,12 +258,38 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// Close on Escape
+// Close ALL popups helper
+function closeAllPopups() {
+    try { closeAllKebabDropdowns(); } catch(_) {}
+    try { closeEditModal(); } catch(_) {}
+    try { closeColorModal(); } catch(_) {}
+    try { closeAddTaskModal(); } catch(_) {}
+    try { closeRenameModal(); } catch(_) {}
+}
+
+// Global Escape closes everything
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-        closeAllKebabDropdowns();
+        closeAllPopups();
     }
 });
+
+// Click on modal backdrops closes the modal
+(function setupModalBackdropClose(){
+    const map = [
+        ['editModal', () => { try { closeEditModal(); } catch(_) {} }],
+        ['colorModal', () => { try { closeColorModal(); } catch(_) {} }],
+        ['addTaskModal', () => { try { closeAddTaskModal(); } catch(_) {} }],
+        ['renameModal', () => { try { closeRenameModal(); } catch(_) {} }]
+    ];
+    map.forEach(([id, closer]) => {
+        const el = document.getElementById(id);
+        if (el && !el._backdropBound) {
+            el.addEventListener('mousedown', (e) => { if (e.target === el) closer(); });
+            el._backdropBound = true;
+        }
+    });
+})();
 
 // Utility: open a hidden native date picker and return the selected value
 function openHiddenDatePicker(initialValue, onSelect) {

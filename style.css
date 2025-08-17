@@ -947,6 +947,14 @@ body {
     background-clip: initial !important;
     color: #2c3e50 !important;
 }
+/* Since gradient text is now applied on the inner span, reset it too during export */
+.export-mode .group-label-text {
+    background: none !important;
+    -webkit-background-clip: initial !important;
+    -webkit-text-fill-color: initial !important;
+    background-clip: initial !important;
+    color: #2c3e50 !important;
+}
 .export-mode .chart-group-header {
     /* ensure header keeps subtle background without transparency issues */
     background: linear-gradient(135deg, #f0f4ff, #e8f0fe) !important;
