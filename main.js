@@ -11,6 +11,16 @@ let lastSavedData = null;
 let previousGroupInputs = new Set();
 // Drag/resize state for task bars
 let taskDragState = null; // { type: 'move'|'resize', side?: 'left'|'right', taskId, startX, chartMin, chartMax, pxPerDay, origStart, origEnd, barEl, trackEl, trackRect }
+
+function updateGroupColor(groupName, color) {
+    if (!groups[groupName]) return;
+    groups[groupName].color = color;
+    markAsChanged();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    showNotification('Group color updated', 'success');
+}
 // Timeline bounds for pixel-to-day mapping
 let chartMinDate = null; // Date
 let chartMaxDate = null; // Date
@@ -103,41 +113,155 @@ document.addEventListener('keydown', function(e){
     if (e.key === 'Enter') { e.preventDefault(); confirmEditModal(); }
 });
 
-// Kebab menu handling
-function toggleKebabMenu(button) {
-    // Close all other open dropdowns
-    document.querySelectorAll('.kebab-dropdown').forEach(dropdown => {
-        if (dropdown !== button.nextElementSibling) {
-            dropdown.classList.remove('show');
+// Kebab menu handling (portal dropdown to body to avoid overlap/clipping)
+// Global utility to close and restore a single dropdown
+function closeKebabDropdown(btn, dd) {
+    if (!dd) return;
+    try {
+        dd.classList.remove('show');
+        // Remove hover-away handlers
+        if (dd._hoverBound) {
+            const { startHoverClose, cancelHoverClose, btnRef } = dd._hoverHandlers || {};
+            if (startHoverClose && cancelHoverClose) {
+                dd.removeEventListener('mouseenter', cancelHoverClose);
+                dd.removeEventListener('mouseleave', startHoverClose);
+                if (btnRef) {
+                    btnRef.removeEventListener('mouseenter', cancelHoverClose);
+                    btnRef.removeEventListener('mouseleave', startHoverClose);
+                }
+            }
+            if (dd._hoverTimeout) {
+                clearTimeout(dd._hoverTimeout);
+                dd._hoverTimeout = null;
+            }
+            dd._hoverBound = false;
+            dd._hoverHandlers = null;
         }
+        // Restore to original container (button's parent .kebab-menu)
+        if (btn && btn.parentElement && dd.parentElement !== btn.parentElement) {
+            btn.parentElement.appendChild(dd);
+        }
+        // Clear inline styles
+        dd.style.left = '';
+        dd.style.top = '';
+        dd.style.right = '';
+        dd.style.position = '';
+        dd.style.display = '';
+        dd.style.transform = '';
+        dd.style.visibility = '';
+        // Remove z-boost on owner
+        const own = btn ? (btn.closest('.chart-row') || btn.closest('.chart-group')) : null;
+        if (own) own.classList.remove('has-open-menu');
+        // Remove bound reposition handlers
+        if (dd._repositionHandler) {
+            window.removeEventListener('scroll', dd._repositionHandler, true);
+            window.removeEventListener('resize', dd._repositionHandler, true);
+            dd._repositionHandler = null;
+        }
+        if (btn) btn.removeAttribute('aria-expanded');
+    } catch(_) {}
+}
+
+function closeAllKebabDropdowns() {
+    document.querySelectorAll('.kebab-dropdown.show').forEach(dd => {
+        const btn = dd._ownerButton || dd.previousElementSibling || document.querySelector('.kebab-icon[aria-expanded="true"]');
+        closeKebabDropdown(btn, dd);
     });
-    
+}
+
+function toggleKebabMenu(button) {
+
+    // Close all other open dropdowns
+    closeAllKebabDropdowns();
+
     // Toggle the clicked dropdown
     const dropdown = button.nextElementSibling;
-    if (dropdown) {
-        const isOpen = dropdown.classList.contains('show');
-        dropdown.classList.toggle('show', !isOpen);
-        
-        // Close dropdown when clicking outside
-        if (!isOpen) {
-            const closeHandler = (e) => {
-                if (!dropdown.contains(e.target) && e.target !== button) {
-                    dropdown.classList.remove('show');
-                    document.removeEventListener('click', closeHandler);
-                }
-            };
-            // Use setTimeout to avoid immediate close on click
-            setTimeout(() => document.addEventListener('click', closeHandler), 0);
-        }
+    if (!dropdown) return;
+    const isOpen = dropdown.classList.contains('show');
+    if (isOpen) {
+        closeKebabDropdown(button, dropdown);
+        return;
     }
+
+    // Mark owner and raise z-index
+    const owner = button.closest('.chart-row') || button.closest('.chart-group');
+    if (owner) owner.classList.add('has-open-menu');
+
+    // Make visible and portal to body
+    dropdown.classList.add('show');
+    dropdown.style.visibility = 'hidden';
+    dropdown.style.display = 'block';
+    // Store reference to the button for closing
+    dropdown._ownerButton = button;
+    document.body.appendChild(dropdown);
+
+    const positionDropdown = () => {
+        const rect = button.getBoundingClientRect();
+        const ddWidth = Math.max(160, dropdown.offsetWidth || 160);
+        const ddHeight = Math.max(80, dropdown.offsetHeight || 100);
+        const pad = 8;
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const openAbove = spaceBelow < ddHeight + 12;
+        let top = openAbove ? (rect.top - ddHeight - 6) : (rect.bottom + 6);
+        let left = rect.right - ddWidth;
+        left = Math.max(pad, Math.min(left, window.innerWidth - ddWidth - pad));
+        top = Math.max(pad, Math.min(top, window.innerHeight - ddHeight - pad));
+        dropdown.style.position = 'fixed';
+        dropdown.style.left = left + 'px';
+        dropdown.style.top = top + 'px';
+        dropdown.style.right = 'auto';
+        dropdown.style.transform = 'none';
+        dropdown.style.visibility = '';
+    };
+
+    positionDropdown();
+    // Reposition on scroll/resize
+    dropdown._repositionHandler = () => positionDropdown();
+    window.addEventListener('scroll', dropdown._repositionHandler, true);
+    window.addEventListener('resize', dropdown._repositionHandler, true);
+
+    // Hover-away to close, with small grace period for moving cursor
+    const startHoverClose = () => {
+        if (dropdown._hoverTimeout) clearTimeout(dropdown._hoverTimeout);
+        dropdown._hoverTimeout = setTimeout(() => closeKebabDropdown(button, dropdown), 250);
+    };
+    const cancelHoverClose = () => {
+        if (dropdown._hoverTimeout) {
+            clearTimeout(dropdown._hoverTimeout);
+            dropdown._hoverTimeout = null;
+        }
+    };
+    dropdown.addEventListener('mouseenter', cancelHoverClose);
+    dropdown.addEventListener('mouseleave', startHoverClose);
+    button.addEventListener('mouseenter', cancelHoverClose);
+    button.addEventListener('mouseleave', startHoverClose);
+    dropdown._hoverBound = true;
+    dropdown._hoverHandlers = { startHoverClose, cancelHoverClose, btnRef: button };
+
+    // Accessibility toggle
+    button.setAttribute('aria-expanded', 'true');
+
+    // Close dropdown when clicking outside
+    const closeHandler = (e) => {
+        if (!dropdown.contains(e.target) && e.target !== button) {
+            document.removeEventListener('click', closeHandler);
+            closeKebabDropdown(button, dropdown);
+        }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 0);
 }
 
 // Close dropdowns when clicking outside
 document.addEventListener('click', (e) => {
     if (!e.target.closest('.kebab-menu')) {
-        document.querySelectorAll('.kebab-dropdown').forEach(dropdown => {
-            dropdown.classList.remove('show');
-        });
+        closeAllKebabDropdowns();
+    }
+});
+
+// Close on Escape
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeAllKebabDropdowns();
     }
 });
 
@@ -942,8 +1066,9 @@ function updateTaskDates(taskId, start, end) {
     showNotification('Task dates updated', 'success');
 }
 
-// Task Color Modal Logic
+// Task/Group Color Modal Logic
 let currentColorModalTaskId = null;
+let currentColorModalGroupName = null;
 
 // Add Task Modal Logic
 let addTaskModalKeyHandlerBound = false;
@@ -1063,6 +1188,7 @@ function confirmAddTaskModal() {
 }
 function openTaskColorModal(taskId) {
     currentColorModalTaskId = taskId;
+    currentColorModalGroupName = null;
     const t = tasks.find(x => x.id === taskId);
     if (!t) return;
     const m = document.getElementById('colorModal');
@@ -1070,15 +1196,28 @@ function openTaskColorModal(taskId) {
     input.value = t.color || '#4caf50';
     m.style.display = 'flex';
 }
+function openGroupColorModal(groupName) {
+    if (!groupName || !groups[groupName]) return;
+    currentColorModalTaskId = null;
+    currentColorModalGroupName = groupName;
+    const m = document.getElementById('colorModal');
+    const input = document.getElementById('colorInput');
+    input.value = groups[groupName].color || '#667eea';
+    m.style.display = 'flex';
+}
 function closeColorModal() {
     const m = document.getElementById('colorModal');
     if (m) m.style.display = 'none';
     currentColorModalTaskId = null;
+    currentColorModalGroupName = null;
 }
 function confirmColorModal() {
-    if (currentColorModalTaskId == null) { closeColorModal(); return; }
     const color = document.getElementById('colorInput').value;
-    updateTaskColor(currentColorModalTaskId, color);
+    if (currentColorModalTaskId != null) {
+        updateTaskColor(currentColorModalTaskId, color);
+    } else if (currentColorModalGroupName) {
+        updateGroupColor(currentColorModalGroupName, color);
+    }
     closeColorModal();
 }
 function updateTaskColor(taskId, color) {
@@ -1772,37 +1911,30 @@ function createGroupChartHTML(months) {
         
         return `
             <div class="chart-group" draggable="true" data-group="${safeGroupName}">
-                <div class="chart-group-header" onclick="if(!event.target.closest('.kebab-menu')) toggleGroup('${safeGroupName}')">
-                    <div class="chart-group-label" ondblclick="openGroupEditModal('${safeGroupName}')" title="Double-click to rename group">
+                <div class="chart-group-header" onclick="if(event.detail === 1 && !event.target.closest('.kebab-menu')) toggleGroup('${safeGroupName}')">
+                    <div class="chart-group-label" ondblclick="event.stopPropagation(); openGroupEditModal('${safeGroupName}')" title="Double-click to rename group">
                         <span class="chart-group-toggle ${isExpanded ? '' : 'collapsed'}">▼</span>
-                        <span>${groupName} (${groupTasks.length})</span>
-                    </div>
-                    
-                    <!-- Kebab menu for group actions -->
-                    <div class="kebab-menu" onclick="event.stopPropagation()">
-                        <div class="kebab-icon" onclick="event.stopPropagation(); toggleKebabMenu(this)">⋮</div>
-                        <div class="kebab-dropdown">
-                            <div class="kebab-item" onclick="openGroupEditModal('${safeGroupName}')">
-                                <span class="kebab-item-icon">✏️</span>
-                                <span>Rename</span>
-                            </div>
-                            <div class="kebab-item" onclick="
-                                const colorInput = document.createElement('input');
-                                colorInput.type = 'color';
-                                colorInput.value = '${groupColor}';
-                                colorInput.onchange = (e) => updateGroupField('${safeGroupName}', 'color', e.target.value);
-                                colorInput.click();
-                            ">
-                                <span class="kebab-item-icon">🎨</span>
-                                <span>Change Color</span>
-                            </div>
-                            <div class="kebab-item" onclick="openAddTaskModal('${safeGroupName}')">
-                                <span class="kebab-item-icon">➕</span>
-                                <span>Add Task</span>
-                            </div>
-                            <div class="kebab-item" onclick="deleteGroup('${groupName}')">
-                                <span class="kebab-item-icon">🗑️</span>
-                                <span>Delete Group</span>
+                        <span class="group-label-text">${groupName} (${groupTasks.length})</span>
+                        <!-- Kebab menu for group actions (inside label to align with task kebab) -->
+                        <div class="kebab-menu" onclick="event.stopPropagation()">
+                            <div class="kebab-icon" onclick="event.stopPropagation(); toggleKebabMenu(this)">⋮</div>
+                            <div class="kebab-dropdown">
+                                <div class="kebab-item" onclick="openGroupEditModal('${safeGroupName}')">
+                                    <span class="kebab-item-icon">✏️</span>
+                                    <span>Rename Group</span>
+                                </div>
+                                <div class="kebab-item" onclick="openAddTaskModal('${safeGroupName}')">
+                                    <span class="kebab-item-icon">➕</span>
+                                    <span>Add Task</span>
+                                </div>
+                                <div class="kebab-item" onclick="openGroupColorModal('${safeGroupName}')">
+                                    <span class="kebab-item-icon">🎨</span>
+                                    <span>Change Color</span>
+                                </div>
+                                <div class="kebab-item danger" onclick="deleteGroup('${safeGroupName}')">
+                                    <span class="kebab-item-icon">🗑️</span>
+                                    <span>Delete Group</span>
+                                </div>
                             </div>
                         </div>
                     </div>

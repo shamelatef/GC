@@ -1,3 +1,41 @@
+.chart-group-label .kebab-icon,
+.task-label .kebab-icon {
+    /* Reset any gradient text clipping that might be inherited */
+    -webkit-background-clip: initial !important;
+    background-clip: initial !important;
+    -webkit-text-fill-color: initial !important;
+    color: #64748b;
+}
+
+/* Make group/task labels anchor dropdowns without creating a stacking context */
+.chart-group-label,
+.task-label {
+    position: relative; /* anchor absolute dropdowns */
+    z-index: auto; /* avoid trapping dropdown inside lower stacking context */
+}
+
+/* Ensure following content doesn’t overlay on top of open menus */
+.chart-row,
+.chart-group {
+    position: relative;
+    z-index: 1;
+}
+
+/* When a kebab menu is open, raise the owner above neighbors and allow overflow */
+.chart-row.has-open-menu,
+.chart-group.has-open-menu {
+    z-index: 5;
+    overflow: visible;
+}
+
+/* Ensure default overflow won't clip dropdowns even without the class */
+.chart-row,
+.chart-group {
+    overflow: visible;
+}
+
+/* Align spacing to match task label paddings for visual vertical alignment */
+.chart-group-label { padding: 8px 12px; }
 * {
     margin: 0;
     padding: 0;
@@ -443,7 +481,7 @@ body {
 
 .chart-group-header {
     display: grid;
-    grid-template-columns: 220px 1fr;
+    grid-template-columns: 220px 1fr; /* keep grid so timeline aligns with tasks */
     align-items: center;
     margin-bottom: 5px;
     background: linear-gradient(135deg, #f0f4ff,rgb(139, 176, 240));
@@ -478,14 +516,24 @@ body {
 .chart-group-label {
     padding: 12px 15px 12px 25px;
     font-weight: 700;
-    color: #2c3e50;
+    color: #2c3e50; /* keep normal color on container */
+    display: flex;
+    align-items: center;
+    user-select: none;
+    overflow: visible; /* allow dropdown to escape label box */
+}
+
+/* Apply gradient text only to the name, not the whole label */
+.group-label-text {
     background: linear-gradient(135deg, #667eea, #764ba2);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    display: flex;
-    align-items: center;
-    user-select: none;
+    color: transparent;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .chart-group-toggle {
@@ -529,7 +577,7 @@ body {
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     min-width: 160px;
-    z-index: 1000;
+    z-index: 9999; /* ensure above rows */
     display: none;
     overflow: hidden;
     animation: fadeIn 0.15s ease-out;
@@ -567,19 +615,24 @@ body {
     text-align: center;
 }
 
-/* Adjust chart group header to accommodate kebab menu */
+/* Ensure we don't override grid layout on group header; just set sizing */
 .chart-group-header {
-    display: flex;
-    align-items: center;
-    position: relative;
     min-height: 35px; /* ensure space for timeline */
-    gap: 8px;
 }
 
 .chart-group-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     flex: 0 0 220px; /* fixed label column like rows */
-    overflow: hidden;
-    text-overflow: ellipsis;
+}
+
+/* Right-align group kebab inside label to match task kebab alignment */
+.chart-group-label .kebab-menu { margin-left: auto; }
+
+/* Make collapsed group timeline use the timeline column exactly */
+.chart-group-timeline {
+    grid-column: 2 / 3; /* ensure it starts where tasks timeline starts */
 }
 
 /* Adjust task label for kebab menu */
