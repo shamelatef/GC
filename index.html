@@ -1,0 +1,140 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Gantt Chart with Groups</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Enhanced Gantt Chart with Groups</h1>
+            <p>Create and manage your project timeline with grouped tasks - now with drag & drop!</p>
+            <div id="saveIndicator" style="margin-top: 10px; font-size: 0.9rem; font-weight: 600;">✓ All changes saved</div>
+        </div>
+
+        <div class="project-tabs" id="projectTabs"></div>
+        
+        <!-- Rename Project Modal -->
+        <div class="modal-backdrop" id="renameModal">
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="renameTitle">
+                <h3 id="renameTitle">Rename Project</h3>
+                <div class="modal-body">
+                    <input type="text" id="renameProjectInput" placeholder="Project name" />
+                </div>
+                <div class="actions">
+                    <button class="btn btn-secondary btn-secondary-ghost" onclick="closeRenameModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="confirmRenameModal()">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Modal (for task/group edits) -->
+        <div class="modal-backdrop" id="editModal" style="display: none;">
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+                <h3 id="editTitle">Edit</h3>
+                <div class="modal-body">
+                    <input type="text" id="editInput" placeholder="Enter value" />
+                </div>
+                <div class="actions">
+                    <button class="btn btn-secondary btn-secondary-ghost" onclick="closeEditModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="confirmEditModal()">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Dates Modal -->
+        <div class="modal-backdrop" id="dateModal" style="display:none">
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dateTitle">
+                <h3 id="dateTitle">Edit Task Dates</h3>
+                <div class="modal-body" style="display:grid; gap:12px;">
+                    <label style="display:grid; gap:6px;">
+                        <span>Start Date</span>
+                        <input type="date" id="dateStartInput" />
+                    </label>
+                    <label style="display:grid; gap:6px;">
+                        <span>End Date</span>
+                        <input type="date" id="dateEndInput" />
+                    </label>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-secondary btn-secondary-ghost" onclick="closeDateModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="confirmDateModal()">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Color Modal -->
+        <div class="modal-backdrop" id="colorModal" style="display:none">
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="colorTitle">
+                <h3 id="colorTitle">Change Task Color</h3>
+                <div class="modal-body" style="display:grid; gap:12px;">
+                    <label style="display:grid; gap:6px;">
+                        <span>Pick a color</span>
+                        <input type="color" id="colorInput" />
+                    </label>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-secondary btn-secondary-ghost" onclick="closeColorModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="confirmColorModal()">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="form-group">
+                <label for="taskName">Task Name</label>
+                <input type="text" id="taskName" placeholder="Enter task name">
+            </div>
+            <div class="form-group">
+                <label for="groupName">Group</label>
+                <div class="group-input-wrapper">
+                    <div id="groupGhost" class="group-ghost" aria-hidden="true"></div>
+                    <input type="text" id="groupName" placeholder="Enter group name" list="groupSuggestions">
+                </div>
+                <datalist id="groupSuggestions"></datalist>
+                <div id="groupHint" class="input-hint" aria-live="polite">Press Tab to autocomplete</div>
+            </div>
+            <div class="form-group">
+                <label for="startDate">Start Date</label>
+                <input type="date" id="startDate">
+            </div>
+            <div class="form-group">
+                <label for="endDate">End Date</label>
+                <input type="date" id="endDate">
+            </div>
+            <div class="form-group">
+                <label for="taskColor">Task Color</label>
+                <input type="color" id="taskColor" class="color-input" value="#667eea">
+            </div>
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="addTask()">Add Task</button>
+                <button class="btn btn-tertiary" onclick="toggleAllGroups()">Collapse All</button>
+                <button class="btn btn-secondary" onclick="saveChartAsPNG()">Save PNG</button>
+                <button class="btn btn-success" onclick="saveToFile()">Save File</button>
+                <button class="btn btn-info" onclick="document.getElementById('fileInput').click()">Load File</button>
+                <button class="btn btn-info" onclick="document.getElementById('excelInput').click()">Import CSV</button>
+                <button class="btn" onclick="exportCSV()">Export CSV</button>
+            </div>
+        </div>
+
+        <input type="file" id="fileInput" class="file-input" accept=".json" onchange="loadFromFile(this)">
+        <input type="file" id="excelInput" class="file-input" accept=".xlsx,.csv" onchange="importFromExcel(this)">
+
+        <div class="groups-list" id="groupsList" style="display:none" aria-hidden="true"></div>
+
+        <div class="chart-container">
+            <div class="chart" id="ganttChart">
+                <div class="no-tasks">Add tasks to see your Gantt chart</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+</html>

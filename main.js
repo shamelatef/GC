@@ -1,0 +1,1937 @@
+// Global state for currently active project
+let tasks = [];
+let groups = {};
+let groupStates = {};
+let groupOrder = [];
+let draggedElement = null;
+let draggedType = null;
+let hasUnsavedChanges = false;
+let lastSavedData = null;
+// Track previously typed group names (not only the ones created via tasks)
+let previousGroupInputs = new Set();
+
+// Multi-project management
+let projects = [];
+let activeProjectIndex = 0;
+
+function makeEmptyProject(name = 'Project 1') {
+    return {
+        name,
+        tasks: [],
+        groups: {},
+        groupStates: {},
+        groupOrder: []
+    };
+}
+
+function syncActiveFromGlobals() {
+    if (!projects[activeProjectIndex]) return;
+    projects[activeProjectIndex].tasks = JSON.parse(JSON.stringify(tasks));
+    projects[activeProjectIndex].groups = JSON.parse(JSON.stringify(groups));
+    projects[activeProjectIndex].groupStates = JSON.parse(JSON.stringify(groupStates));
+    projects[activeProjectIndex].groupOrder = JSON.parse(JSON.stringify(groupOrder));
+}
+
+function syncGlobalsFromActive() {
+    const p = projects[activeProjectIndex];
+    if (!p) return;
+    tasks = JSON.parse(JSON.stringify(p.tasks || []));
+    groups = JSON.parse(JSON.stringify(p.groups || {}));
+    groupStates = JSON.parse(JSON.stringify(p.groupStates || {}));
+    groupOrder = JSON.parse(JSON.stringify(p.groupOrder || Object.keys(p.groups || {})));
+}
+
+// Generic edit modal logic for task/group name edits
+let editContext = null; // { type: 'task'|'group', taskId?: number, groupName?: string }
+function openTaskEditModal(taskId) {
+    const t = (tasks || []).find(x => x.id === taskId);
+    if (!t) return;
+    editContext = { type: 'task', taskId };
+    const title = document.getElementById('editTitle');
+    const input = document.getElementById('editInput');
+    const modal = document.getElementById('editModal');
+    if (!title || !input || !modal) return;
+    title.textContent = 'Edit Task Name';
+    input.value = t.name || '';
+    modal.style.display = 'flex';
+    input.focus();
+    input.select();
+}
+function openGroupEditModal(groupName) {
+    if (!groupName) return;
+    editContext = { type: 'group', groupName };
+    const title = document.getElementById('editTitle');
+    const input = document.getElementById('editInput');
+    const modal = document.getElementById('editModal');
+    if (!title || !input || !modal) return;
+    title.textContent = 'Edit Group Name';
+    input.value = groupName || '';
+    modal.style.display = 'flex';
+    input.focus();
+    input.select();
+}
+function closeEditModal() {
+    const modal = document.getElementById('editModal');
+    if (modal) modal.style.display = 'none';
+    editContext = null;
+}
+function confirmEditModal() {
+    const input = document.getElementById('editInput');
+    const val = input ? input.value : '';
+    if (!editContext) { closeEditModal(); return; }
+    if (editContext.type === 'task' && typeof updateTaskField === 'function') {
+        updateTaskField(editContext.taskId, 'name', val);
+    } else if (editContext.type === 'group' && typeof updateGroupField === 'function') {
+        updateGroupField(editContext.groupName, 'name', val);
+    }
+    closeEditModal();
+}
+// Close modal on Escape, save on Enter
+document.addEventListener('keydown', function(e){
+    const modal = document.getElementById('editModal');
+    if (!modal || modal.style.display === 'none') return;
+    if (e.key === 'Escape') { e.preventDefault(); closeEditModal(); }
+    if (e.key === 'Enter') { e.preventDefault(); confirmEditModal(); }
+});
+
+// Kebab menu handling
+function toggleKebabMenu(button) {
+    // Close all other open dropdowns
+    document.querySelectorAll('.kebab-dropdown').forEach(dropdown => {
+        if (dropdown !== button.nextElementSibling) {
+            dropdown.classList.remove('show');
+        }
+    });
+    
+    // Toggle the clicked dropdown
+    const dropdown = button.nextElementSibling;
+    if (dropdown) {
+        const isOpen = dropdown.classList.contains('show');
+        dropdown.classList.toggle('show', !isOpen);
+        
+        // Close dropdown when clicking outside
+        if (!isOpen) {
+            const closeHandler = (e) => {
+                if (!dropdown.contains(e.target) && e.target !== button) {
+                    dropdown.classList.remove('show');
+                    document.removeEventListener('click', closeHandler);
+                }
+            };
+            // Use setTimeout to avoid immediate close on click
+            setTimeout(() => document.addEventListener('click', closeHandler), 0);
+        }
+    }
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.kebab-menu')) {
+        document.querySelectorAll('.kebab-dropdown').forEach(dropdown => {
+            dropdown.classList.remove('show');
+        });
+    }
+});
+
+// Utility: open a hidden native date picker and return the selected value
+function openHiddenDatePicker(initialValue, onSelect) {
+    const input = document.createElement('input');
+    input.type = 'date';
+    if (initialValue) input.value = initialValue;
+    // Keep in viewport (some browsers ignore clicks on offscreen elements)
+    input.style.position = 'fixed';
+    input.style.left = '10px';
+    input.style.top = '10px';
+    input.style.width = '1px';
+    input.style.height = '1px';
+    input.style.opacity = '0';
+    input.style.zIndex = '2147483647';
+    document.body.appendChild(input);
+
+    const cleanup = () => { try { document.body.removeChild(input); } catch (_) {} };
+    const handleChange = (e) => { try { if (onSelect) onSelect(e.target.value); } finally { cleanup(); } };
+    input.addEventListener('change', handleChange, { once: true });
+    input.addEventListener('blur', cleanup, { once: true });
+    // Ensure focus, then try showPicker if available; otherwise click
+    input.focus({ preventScroll: true });
+    setTimeout(() => {
+        try {
+            if (typeof input.showPicker === 'function') {
+                input.showPicker();
+            } else {
+                input.click();
+            }
+        } catch (_) {
+            // Fallback to click if showPicker fails
+            try { input.click(); } catch (_) {}
+        }
+    }, 0);
+}
+
+// Close the specific kebab dropdown when mouse leaves the menu area
+document.addEventListener('mouseout', (e) => {
+    const menu = e.target.closest('.kebab-menu');
+    if (!menu) return;
+    const toEl = e.relatedTarget;
+    // If the mouse moved to an element outside this menu, close it
+    if (!toEl || !menu.contains(toEl)) {
+        const dd = menu.querySelector('.kebab-dropdown');
+        if (dd) dd.classList.remove('show');
+    }
+});
+
+function renderProjectTabs() {
+    const el = document.getElementById('projectTabs');
+    if (!el) return;
+    el.innerHTML = '';
+    projects.forEach((p, idx) => {
+        const tab = document.createElement('button');
+        tab.className = 'project-tab' + (idx === activeProjectIndex ? ' active' : '');
+        tab.innerHTML = `<span class="name">${p.name || 'Untitled'}</span>` +
+                        ` <span class="rename">✎</span>`;
+        tab.title = 'Click to switch. Double-click or click ✎ to rename.';
+        tab.onclick = () => switchProject(idx);
+        tab.ondblclick = () => openRenameModal(idx);
+        tab.querySelector('.rename').onclick = (e) => { e.stopPropagation(); openRenameModal(idx); };
+        const delBtn = document.createElement('button');
+        delBtn.className = 'delete';
+        delBtn.type = 'button';
+        delBtn.title = 'Delete project';
+        delBtn.setAttribute('aria-label', 'Delete project');
+        delBtn.textContent = '×';
+        delBtn.onclick = (e) => { e.stopPropagation(); deleteProject(idx); };
+        const dupBtn = document.createElement('button');
+        dupBtn.className = 'duplicate';
+        dupBtn.type = 'button';
+        dupBtn.title = 'Duplicate project';
+        dupBtn.setAttribute('aria-label', 'Duplicate project');
+        dupBtn.textContent = '⎘';
+        dupBtn.onclick = (e) => { e.stopPropagation(); duplicateProject(idx); };
+        tab.appendChild(dupBtn);
+        tab.appendChild(delBtn);
+        el.appendChild(tab);
+    });
+    const addBtn = document.createElement('button');
+    addBtn.className = 'project-tab add';
+    addBtn.textContent = '+ New Project';
+    addBtn.onclick = addProject;
+    el.appendChild(addBtn);
+}
+
+function addProject() {
+    const base = 'Project ';
+    let n = projects.length + 1;
+    const defaultName = base + n;
+    projects.push(makeEmptyProject(defaultName));
+    activeProjectIndex = projects.length - 1;
+    syncGlobalsFromActive();
+    renderProjectTabs();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    markAsChanged();
+}
+
+function switchProject(index) {
+    if (index === activeProjectIndex) return;
+    // Save current into active project
+    syncActiveFromGlobals();
+    activeProjectIndex = index;
+    syncGlobalsFromActive();
+    renderProjectTabs();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    markAsSaved(); // switching shows saved state for the switched content
+}
+
+function deleteProject(index) {
+    if (!projects[index]) return;
+    const name = projects[index].name || 'Untitled';
+    const ok = confirm(`Delete project "${name}"? This cannot be undone.`);
+    if (!ok) return;
+
+    if (projects.length <= 1) {
+        // Keep at least one empty project so UI remains usable
+        projects = [makeEmptyProject('Project 1')];
+        activeProjectIndex = 0;
+    } else {
+        projects.splice(index, 1);
+        // Adjust active index
+        if (activeProjectIndex > index) {
+            activeProjectIndex -= 1;
+        } else if (activeProjectIndex === index) {
+            activeProjectIndex = Math.max(0, activeProjectIndex - 1);
+        }
+    }
+
+    // Load active project into globals and refresh UI
+    syncGlobalsFromActive();
+    renderProjectTabs();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    markAsChanged();
+}
+
+// Modal-based renaming
+let renameModalIndex = null;
+
+function openRenameModal(index) {
+    renameModalIndex = index;
+    const backdrop = document.getElementById('renameModal');
+    const input = document.getElementById('renameProjectInput');
+    input.value = projects[index]?.name || '';
+    backdrop.style.display = 'flex';
+    setTimeout(() => { input.focus(); input.select(); }, 0);
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); confirmRenameModal(); }
+        if (e.key === 'Escape') { e.preventDefault(); closeRenameModal(); }
+    };
+}
+
+function closeRenameModal() {
+    const backdrop = document.getElementById('renameModal');
+    const input = document.getElementById('renameProjectInput');
+    backdrop.style.display = 'none';
+    input.onkeydown = null;
+    renameModalIndex = null;
+}
+
+function confirmRenameModal() {
+    const input = document.getElementById('renameProjectInput');
+    const val = (input.value || '').trim();
+    const idx = renameModalIndex;
+    if (idx != null && val) {
+        performRename(idx, val);
+    }
+    closeRenameModal();
+}
+
+function performRename(index, newName) {
+    if (!projects[index]) return;
+    const cur = projects[index].name || 'Untitled';
+    if (newName && newName !== cur) {
+        projects[index].name = newName;
+        renderProjectTabs();
+        markAsChanged();
+    }
+}
+
+// Keep API for any existing callers
+function renameProject(index) { openRenameModal(index); }
+
+// Auto-save functionality
+function markAsChanged() {
+    hasUnsavedChanges = true;
+    // keep active project in sync when any change happens
+    try { syncActiveFromGlobals(); } catch (e) {}
+    updateSaveIndicator();
+}
+
+function markAsSaved() {
+    hasUnsavedChanges = false;
+    lastSavedData = getCurrentDataHash();
+    updateSaveIndicator();
+}
+
+function getCurrentDataHash() {
+    // Include projects for proper change detection
+    return JSON.stringify({
+        projects,
+        activeProjectIndex
+    });
+}
+
+function updateSaveIndicator() {
+    const indicator = document.getElementById('saveIndicator');
+    if (hasUnsavedChanges) {
+        indicator.textContent = '● Unsaved changes';
+        indicator.style.color = '#e74c3c';
+    } else {
+        indicator.textContent = '✓ All changes saved';
+        indicator.style.color = '#27ae60';
+    }
+}
+
+// Auto-save every 30 seconds
+function autoSave() {
+    if (hasUnsavedChanges && projects.length > 0) {
+        try {
+            // ensure active is synced
+            syncActiveFromGlobals();
+            const autoSaveData = {
+                projects: projects,
+                activeProjectIndex: activeProjectIndex,
+                autoSaveTimestamp: new Date().toISOString(),
+                version: '3.0'
+            };
+            
+            // Use localStorage for auto-save only
+            localStorage.setItem('gantt_autosave', JSON.stringify(autoSaveData));
+            
+            // Show brief notification
+            showNotification('Auto-saved locally', 'success');
+        } catch (error) {
+            console.error('Auto-save failed:', error);
+        }
+    }
+}
+
+// Check for auto-saved data on load
+function checkForAutoSave() {
+    const autoSaveData = localStorage.getItem('gantt_autosave');
+    if (autoSaveData && projects.length === 0) {
+        try {
+            const data = JSON.parse(autoSaveData);
+            if ((data.version === '3.0' && data.projects && data.projects.length > 0) ||
+                (data.tasks && data.tasks.length > 0)) {
+                const saveTime = new Date(data.autoSaveTimestamp).toLocaleString();
+                if (confirm(`Found auto-saved data from ${saveTime}.\n\nWould you like to restore it?`)) {
+                    loadDataFromObject(data);
+                    showNotification('Auto-saved data restored', 'success');
+                } else {
+                    localStorage.removeItem('gantt_autosave');
+                }
+            }
+        } catch (error) {
+            console.error('Error loading auto-save:', error);
+            localStorage.removeItem('gantt_autosave');
+        }
+    }
+}
+
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.textContent = message;
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        border-radius: 8px;
+        color: white;
+        font-weight: 600;
+        z-index: 1000;
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+        ${type === 'success' ? 'background: linear-gradient(45deg, #27ae60, #2ecc71);' : ''}
+        ${type === 'error' ? 'background: linear-gradient(45deg, #e74c3c, #c0392b);' : ''}
+        ${type === 'info' ? 'background: linear-gradient(45deg, #3498db, #2980b9);' : ''}
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.style.transform = 'translateX(0)';
+    }, 100);
+    
+    setTimeout(() => {
+        notification.style.transform = 'translateX(100%)';
+        setTimeout(() => {
+            document.body.removeChild(notification);
+        }, 300);
+    }, 3000);
+}
+
+// Prevent accidental page leaving
+window.addEventListener('beforeunload', function(e) {
+    if (hasUnsavedChanges) {
+        const message = 'You have unsaved changes. Do you want to leave without saving?';
+        e.returnValue = message;
+        return message;
+    }
+});
+
+// Data management functions
+function loadDataFromObject(data) {
+    // v3 format: multiple projects
+    if (data.version === '3.0' && Array.isArray(data.projects)) {
+        projects = data.projects.map(p => ({
+            name: p.name || 'Untitled',
+            tasks: p.tasks || [],
+            groups: p.groups || {},
+            groupStates: p.groupStates || {},
+            groupOrder: p.groupOrder || Object.keys(p.groups || {})
+        }));
+        activeProjectIndex = Math.min(Math.max(0, data.activeProjectIndex || 0), projects.length - 1);
+    } else if (data.tasks || data.groups) {
+        // v2 single project fallback
+        projects = [{
+            name: data.name || 'Project 1',
+            tasks: data.tasks || [],
+            groups: data.groups || {},
+            groupStates: data.groupStates || {},
+            groupOrder: data.groupOrder || Object.keys(data.groups || {})
+        }];
+        activeProjectIndex = 0;
+    } else if (Array.isArray(data)) {
+        // Just in case: raw array of projects
+        projects = data;
+        activeProjectIndex = 0;
+    }
+
+    syncGlobalsFromActive();
+    renderProjectTabs();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    markAsSaved();
+}
+
+function saveChartAsPNG() {
+    const chart = document.getElementById('ganttChart');
+    
+    // Create a clone of the chart for PNG generation without highlighted groups
+    const chartClone = chart.cloneNode(true);
+    
+    // Remove any highlighting or hover effects from the clone
+    const groupBars = chartClone.querySelectorAll('.group-bar');
+    groupBars.forEach(bar => {
+        bar.style.opacity = '0.6';
+        bar.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
+    });
+
+    // Temporarily add the clone to the document (invisible)
+    chartClone.style.position = 'absolute';
+    chartClone.style.left = '-9999px';
+    chartClone.style.top = '0';
+    document.body.appendChild(chartClone);
+    
+    html2canvas(chartClone, { 
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        width: chartClone.scrollWidth,
+        height: chartClone.scrollHeight,
+        scrollX: 0,
+        scrollY: 0
+    }).then(canvas => {
+        // Resize to fit PowerPoint-friendly width while preserving aspect ratio
+        const MAX_W = 1920;
+        let outCanvas = canvas;
+        if (canvas.width > MAX_W) {
+            const ratio = MAX_W / canvas.width;
+            const oc = document.createElement('canvas');
+            oc.width = Math.round(canvas.width * ratio);
+            oc.height = Math.round(canvas.height * ratio);
+            const ctx = oc.getContext('2d');
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(canvas, 0, 0, oc.width, oc.height);
+            outCanvas = oc;
+        }
+        const link = document.createElement('a');
+        link.download = `gantt_chart_${new Date().toISOString().split('T')[0]}.png`;
+        link.href = outCanvas.toDataURL('image/png');
+        link.click();
+        
+        // Remove the clone
+        document.body.removeChild(chartClone);
+    }).catch(err => {
+        console.error('Error generating PNG:', err);
+        alert('Error generating PNG. Please try again.');
+        document.body.removeChild(chartClone);
+    });
+}
+
+function saveToFile() {
+    // ensure latest globals synced back
+    syncActiveFromGlobals();
+    const data = {
+        projects: projects,
+        activeProjectIndex: activeProjectIndex,
+        exportDate: new Date().toISOString(),
+        version: '3.0'
+    };
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.download = `gantt_data_${new Date().toISOString().split('T')[0]}.json`;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    
+    markAsSaved();
+    localStorage.removeItem('gantt_autosave'); // Clear auto-save after manual save
+    showNotification('File saved successfully', 'success');
+}
+
+// Export active project's tasks as CSV
+function exportCSV() {
+    // Use current globals for active project
+    const rows = tasks.map(t => ({
+        Task_Name: t.name || '',
+        group_name: t.group || '',
+        start_date: t.startDate || '',
+        end_date: t.endDate || ''
+    }));
+    const header = ['Task_Name','group_name','start_date','end_date'];
+    const esc = v => '"' + String(v).replace(/"/g, '""') + '"';
+    const lines = [header.join(',')].concat(rows.map(r => header.map(h => esc(r[h])).join(',')));
+    const csv = lines.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const ts = new Date().toISOString().split('T')[0];
+    const projName = (projects[activeProjectIndex]?.name || 'project').replace(/[^\w\-]+/g,'_');
+    link.download = `${projName}_tasks_${ts}.csv`;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    if (typeof showNotification === 'function') showNotification('CSV exported', 'success');
+}
+
+function loadFromFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = JSON.parse(e.target.result);
+            
+            if (data.version && data.tasks && data.groups) {
+                loadDataFromObject(data);
+                localStorage.removeItem('gantt_autosave'); // Clear auto-save after loading file
+                showNotification('Data loaded successfully', 'success');
+            } else {
+                showNotification('Invalid file format', 'error');
+            }
+        } catch (error) {
+            console.error('Error loading file:', error);
+            showNotification('Error loading file', 'error');
+        }
+    };
+    reader.readAsText(file);
+    
+    // Reset the input
+    input.value = '';
+}
+
+function importFromExcel(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.csv')) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const text = e.target.result;
+                const rows = parseCSV(text);
+                processImportedRows(rows);
+            } catch (err) {
+                console.error('CSV import error:', err);
+                showNotification('Error importing CSV', 'error');
+            } finally {
+                input.value = '';
+            }
+        };
+        reader.readAsText(file);
+    } else {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheet];
+                const json = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+                // Normalize to array of plain objects
+                const rows = json.map(r => ({ ...r }));
+                processImportedRows(rows);
+            } catch (err) {
+                console.error('Excel import error:', err);
+                showNotification('Error importing Excel file', 'error');
+            } finally {
+                input.value = '';
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+}
+
+function parseCSV(text) {
+    // Simple CSV parser handling commas and quotes
+    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+    if (lines.length === 0) return [];
+    const headers = splitCSVLine(lines[0]).map(h => h.trim());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+        const cols = splitCSVLine(lines[i]);
+        const obj = {};
+        headers.forEach((h, idx) => {
+            obj[h] = (cols[idx] ?? '').trim();
+        });
+        rows.push(obj);
+    }
+    return rows;
+}
+
+function splitCSVLine(line) {
+    const result = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+            if (inQuotes && line[i + 1] === '"') { // Escaped quote
+                cur += '"';
+                i++;
+            } else {
+                inQuotes = !inQuotes;
+            }
+        } else if (ch === ',' && !inQuotes) {
+            result.push(cur);
+            cur = '';
+        } else {
+            cur += ch;
+        }
+    }
+    result.push(cur);
+    return result;
+}
+
+function processImportedRows(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+        showNotification('No rows found to import', 'error');
+        return;
+    }
+
+    // Map headers case-insensitively
+    const norm = s => String(s || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+    // Try to find expected headers
+    const sample = rows[0];
+    const keys = Object.keys(sample);
+    const headerMap = {};
+    for (const k of keys) {
+        const nk = norm(k);
+        if (!headerMap.task && (nk === 'taskname' || nk === 'task' || nk === 'task_name')) headerMap.task = k;
+        if (!headerMap.group && (nk === 'groupname' || nk === 'group' || nk === 'group_name')) headerMap.group = k;
+        if (!headerMap.start && (nk === 'startdate' || nk === 'start' || nk === 'start_date')) headerMap.start = k;
+        if (!headerMap.end && (nk === 'enddate' || nk === 'end' || nk === 'end_date' || nk === 'finishdate' || nk === 'finish')) headerMap.end = k;
+    }
+
+    if (!headerMap.task || !headerMap.group || !headerMap.start || !headerMap.end) {
+        showNotification('Missing required headers: Task_Name, group_name, start_date, end_date', 'error');
+        return;
+    }
+
+    let imported = 0;
+    let idBase = Date.now();
+    for (const row of rows) {
+        const name = String(row[headerMap.task] || '').trim();
+        const groupName = String(row[headerMap.group] || '').trim() || 'Ungrouped';
+        const startUS = String(row[headerMap.start] || '').trim();
+        const endUS = String(row[headerMap.end] || '').trim();
+
+        if (!name || !startUS || !endUS) continue;
+
+        const startISO = usDateToISO(startUS);
+        const endISO = usDateToISO(endUS);
+        if (!startISO || !endISO) continue;
+        if (new Date(startISO) > new Date(endISO)) continue;
+
+        const color = groups[groupName]?.color || '#667eea';
+        const task = {
+            id: idBase++,
+            name,
+            group: groupName,
+            startDate: startISO,
+            endDate: endISO,
+            color
+        };
+        tasks.push(task);
+
+        if (!groups[groupName]) {
+            groups[groupName] = { name: groupName, color };
+            groupStates[groupName] = true;
+            groupOrder.push(groupName);
+        }
+        imported++;
+    }
+
+    if (imported > 0) {
+        markAsChanged();
+        updateGroupsList();
+        updateChart();
+        updateGroupSuggestions();
+        showNotification(`Imported ${imported} task${imported !== 1 ? 's' : ''}`, 'success');
+    } else {
+        showNotification('No valid rows to import', 'error');
+    }
+}
+
+function usDateToISO(us) {
+    // Accept mm/dd/yyyy or m/d/yyyy, trim spaces
+    const m = String(us).trim().match(/^([0-1]?\d)\/([0-3]?\d)\/(\d{4})$/);
+    if (!m) return null;
+    const mm = m[1].padStart(2, '0');
+    const dd = m[2].padStart(2, '0');
+    const yyyy = m[3];
+    // Basic range checks
+    const month = parseInt(mm, 10);
+    const day = parseInt(dd, 10);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+window.onload = function() {
+    setTodayDate();
+    checkForAutoSave(); // Check for auto-saved data first
+
+    // If no projects loaded from auto-save, start with a default one
+    if (!Array.isArray(projects) || projects.length === 0) {
+        projects = [makeEmptyProject('Project 1')];
+        activeProjectIndex = 0;
+    }
+    syncGlobalsFromActive();
+    renderProjectTabs();
+
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    setupDragAndDrop();
+    setupGroupAutocomplete();
+    
+    // Autosave will now occur only on refresh/leave via beforeunload
+    
+    // Initialize save indicator
+    updateSaveIndicator();
+};
+
+// Silent, synchronous autosave (no notifications/UI updates)
+function quickAutoSave() {
+    try {
+        if (!Array.isArray(projects) || projects.length === 0) return;
+        // ensure latest in-memory changes are reflected in active project
+        syncActiveFromGlobals();
+        const autoSaveData = {
+            projects: projects,
+            activeProjectIndex: activeProjectIndex,
+            autoSaveTimestamp: new Date().toISOString(),
+            version: '3.0'
+        };
+        localStorage.setItem('gantt_autosave', JSON.stringify(autoSaveData));
+    } catch (e) {
+        // ignore errors on unload
+    }
+}
+
+// Save only when the page is actually navigating away
+window.addEventListener('pagehide', quickAutoSave, { capture: true });
+
+// Task Dates Modal Logic
+let currentDateModalTaskId = null;
+function openTaskDateModal(taskId) {
+    currentDateModalTaskId = taskId;
+    const t = tasks.find(x => x.id === taskId);
+    if (!t) return;
+    const m = document.getElementById('dateModal');
+    document.getElementById('dateStartInput').value = t.startDate;
+    document.getElementById('dateEndInput').value = t.endDate;
+    m.style.display = 'flex';
+}
+function closeDateModal() {
+    const m = document.getElementById('dateModal');
+    if (m) m.style.display = 'none';
+    currentDateModalTaskId = null;
+}
+function confirmDateModal() {
+    if (currentDateModalTaskId == null) { closeDateModal(); return; }
+    const start = document.getElementById('dateStartInput').value;
+    const end = document.getElementById('dateEndInput').value;
+    if (!start || !end) { showNotification('Please select both dates', 'error'); return; }
+    if (new Date(start) > new Date(end)) { showNotification('Start date cannot be after end date', 'error'); return; }
+    updateTaskDates(currentDateModalTaskId, start, end);
+    closeDateModal();
+}
+function updateTaskDates(taskId, start, end) {
+    const t = tasks.find(x => x.id === taskId);
+    if (!t) return;
+    t.startDate = start;
+    t.endDate = end;
+    markAsChanged();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    showNotification('Task dates updated', 'success');
+}
+
+// Task Color Modal Logic
+let currentColorModalTaskId = null;
+function openTaskColorModal(taskId) {
+    currentColorModalTaskId = taskId;
+    const t = tasks.find(x => x.id === taskId);
+    if (!t) return;
+    const m = document.getElementById('colorModal');
+    const input = document.getElementById('colorInput');
+    input.value = t.color || '#4caf50';
+    m.style.display = 'flex';
+}
+function closeColorModal() {
+    const m = document.getElementById('colorModal');
+    if (m) m.style.display = 'none';
+    currentColorModalTaskId = null;
+}
+function confirmColorModal() {
+    if (currentColorModalTaskId == null) { closeColorModal(); return; }
+    const color = document.getElementById('colorInput').value;
+    updateTaskColor(currentColorModalTaskId, color);
+    closeColorModal();
+}
+function updateTaskColor(taskId, color) {
+    const t = tasks.find(x => x.id === taskId);
+    if (!t) return;
+    t.color = color;
+    markAsChanged();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    showNotification('Task color updated', 'success');
+}
+
+// Clear red highlight as user types a task name
+(function(){
+    const taskNameEl = document.getElementById('taskName');
+    if (taskNameEl) {
+        taskNameEl.addEventListener('input', function(){
+            this.classList.remove('input-error');
+        });
+    }
+})();
+
+// Helper to draw attention to the task name field with a brief pulse
+function triggerTaskNameAttention(duration = 1500) {
+    const el = document.getElementById('taskName');
+    if (!el) return;
+    el.classList.add('attention-pulse');
+    setTimeout(() => el.classList.remove('attention-pulse'), duration);
+}
+
+function setTodayDate() {
+    const today = new Date().toISOString().split('T')[0];
+    const startDateInput = document.getElementById('startDate');
+    const endDateInput = document.getElementById('endDate');
+    
+    if (!startDateInput.value) {
+        startDateInput.value = today;
+    }
+    if (!endDateInput.value) {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        endDateInput.value = tomorrow.toISOString().split('T')[0];
+    }
+}
+
+function addTask() {
+    const taskNameInput = document.getElementById('taskName');
+    const groupNameInput = document.getElementById('groupName');
+    const startDateInput = document.getElementById('startDate');
+    const endDateInput = document.getElementById('endDate');
+    const colorInput = document.getElementById('taskColor');
+
+    const taskName = taskNameInput.value.trim();
+    const groupName = groupNameInput.value.trim() || 'Ungrouped';
+    const startDate = startDateInput.value;
+    const endDate = endDateInput.value;
+    const taskColor = colorInput.value;
+
+    // remove previous error highlight
+    taskNameInput.classList.remove('input-error');
+
+    // highlight task name box on missing fields
+    if (!taskName || !startDate || !endDate) {
+        if (!taskName) {
+            taskNameInput.classList.add('input-error');
+            taskNameInput.focus();
+        }
+        return;
+    }
+
+    if (new Date(startDate) > new Date(endDate)) {
+        showNotification('Start date cannot be after end date', 'error');
+        endDateInput.focus();
+        return;
+    }
+
+    const task = {
+        id: Date.now(),
+        name: taskName,
+        group: groupName,
+        startDate: startDate,
+        endDate: endDate,
+        color: taskColor
+    };
+
+    tasks.push(task);
+
+    // Remember this group name as a previous input
+    if (groupName && groupName !== 'Ungrouped') {
+        previousGroupInputs.add(groupName);
+    }
+
+    if (!groups[groupName]) {
+        groups[groupName] = {
+            name: groupName,
+            color: taskColor
+        };
+        groupStates[groupName] = true;
+        groupOrder.push(groupName);
+    }
+
+    markAsChanged();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    clearForm();
+    showNotification('Task added successfully', 'success');
+}
+
+function deleteTask(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    if (!confirm(`Are you sure you want to delete "${task.name}"?`)) {
+        return;
+    }
+
+    tasks = tasks.filter(t => t.id !== taskId);
+
+    const groupTasks = tasks.filter(t => t.group === task.group);
+    if (groupTasks.length === 0) {
+        delete groups[task.group];
+        delete groupStates[task.group];
+        groupOrder = groupOrder.filter(g => g !== task.group);
+    }
+
+    markAsChanged();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    showNotification('Task deleted', 'success');
+}
+
+function deleteGroup(groupName) {
+    if (!groups[groupName]) return;
+    const count = tasks.filter(t => t.group === groupName).length;
+    const message = count > 0
+        ? `Delete group "${groupName}" and its ${count} task${count !== 1 ? 's' : ''}?`
+        : `Delete empty group "${groupName}"?`;
+    if (!confirm(message)) return;
+
+    // Remove all tasks in the group
+    tasks = tasks.filter(t => t.group !== groupName);
+
+    // Remove group state and order
+    delete groups[groupName];
+    delete groupStates[groupName];
+    groupOrder = groupOrder.filter(g => g !== groupName);
+
+    markAsChanged();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    showNotification('Group deleted', 'success');
+}
+
+function updateTaskField(taskId, field, value) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    if (field === 'startDate' && new Date(value) > new Date(task.endDate)) {
+        showNotification('Start date cannot be after end date', 'error');
+        return;
+    }
+    if (field === 'endDate' && new Date(value) < new Date(task.startDate)) {
+        showNotification('End date cannot be before start date', 'error');
+        return;
+    }
+
+    const oldGroup = task.group;
+    task[field] = value;
+
+    if (field === 'group') {
+        const newGroup = value.trim() || 'Ungrouped';
+        task.group = newGroup;
+
+        if (!groups[newGroup]) {
+            groups[newGroup] = {
+                name: newGroup,
+                color: task.color
+            };
+            groupStates[newGroup] = true;
+            groupOrder.push(newGroup);
+        }
+
+        const oldGroupTasks = tasks.filter(t => t.group === oldGroup);
+        if (oldGroupTasks.length === 0) {
+            delete groups[oldGroup];
+            delete groupStates[oldGroup];
+            groupOrder = groupOrder.filter(g => g !== oldGroup);
+        }
+    }
+
+    markAsChanged();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+}
+
+function updateGroupField(groupName, field, value) {
+    if (!groups[groupName]) return;
+    
+    if (field === 'name') {
+        const newName = value.trim();
+        if (newName && newName !== groupName && !groups[newName]) {
+            // Update group name
+            groups[newName] = { ...groups[groupName], name: newName };
+            groupStates[newName] = groupStates[groupName];
+            
+            // Update all tasks in this group
+            tasks.forEach(task => {
+                if (task.group === groupName) {
+                    task.group = newName;
+                }
+            });
+            
+            // Update group order
+            const index = groupOrder.indexOf(groupName);
+            if (index !== -1) {
+                groupOrder[index] = newName;
+            }
+            
+            // Clean up old group
+            delete groups[groupName];
+            delete groupStates[groupName];
+        }
+    } else if (field === 'color') {
+        groups[groupName].color = value;
+    }
+    
+    markAsChanged();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+}
+
+function toggleGroup(groupName) {
+    groupStates[groupName] = !groupStates[groupName];
+    markAsChanged();
+    updateGroupsList();
+    updateChart();
+}
+
+function toggleAllGroups() {
+    const allExpanded = Object.values(groupStates).every(state => state);
+    const newState = !allExpanded;
+    
+    Object.keys(groupStates).forEach(groupName => {
+        groupStates[groupName] = newState;
+    });
+
+    markAsChanged();
+    updateGroupsList();
+    updateChart();
+}
+
+function clearForm() {
+    const tn = document.getElementById('taskName');
+    tn.value = '';
+    tn.classList.remove('input-error');
+    document.getElementById('groupName').value = '';
+    setGroupGhost('');
+    setTodayDate();
+    document.getElementById('taskColor').value = '#667eea';
+}
+
+function getAllGroupNames() {
+    const names = new Set(Object.keys(groups));
+    previousGroupInputs.forEach(n => { if (n) names.add(n); });
+    return Array.from(names).sort((a,b) => a.localeCompare(b));
+}
+
+function updateGroupSuggestions(filter = '') {
+    const datalist = document.getElementById('groupSuggestions');
+    const all = getAllGroupNames();
+    const f = String(filter || '').toLowerCase();
+    const list = f ? all.filter(n => n.toLowerCase().startsWith(f)) : all;
+    datalist.innerHTML = list.map(groupName => 
+        `<option value="${groupName}"></option>`
+    ).join('');
+    // Toggle hint if there is at least one completion candidate and user typed something
+    const hint = document.getElementById('groupHint');
+    if (hint) {
+        hint.classList.toggle('show', !!f && list.length > 0);
+    }
+    // Update ghost suggestion to first match
+    setGroupGhost(filter);
+}
+
+function setupGroupAutocomplete() {
+    const input = document.getElementById('groupName');
+    const hint = document.getElementById('groupHint');
+    if (!input) return;
+    syncGroupGhostMetrics();
+
+    // Populate from existing known names initially
+    updateGroupSuggestions('');
+
+    input.addEventListener('input', () => {
+        updateGroupSuggestions(input.value);
+    });
+    // Update ghost on caret moves as well
+    input.addEventListener('keyup', () => setGroupGhost(input.value));
+    input.addEventListener('click', () => setGroupGhost(input.value));
+    window.addEventListener('resize', syncGroupGhostMetrics);
+
+    // On blur, remember typed value as a previous input
+    input.addEventListener('blur', () => {
+        const val = (input.value || '').trim();
+        if (val) {
+            previousGroupInputs.add(val);
+            updateGroupSuggestions('');
+        }
+        if (hint) hint.classList.remove('show');
+        // Clear ghost on blur
+        setGroupGhost('');
+    });
+
+    // Tab to autocomplete to first matching suggestion
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+            const val = input.value.trim();
+            if (!val) return; // let Tab behave normally
+            const all = getAllGroupNames();
+            const match = all.find(n => n.toLowerCase().startsWith(val.toLowerCase()));
+            if (match && match !== val) {
+                e.preventDefault();
+                input.value = match;
+                // Keep the caret at the end after completion
+                requestAnimationFrame(() => {
+                    input.setSelectionRange(match.length, match.length);
+                });
+                // Hide hint after autocompletion
+                if (hint) hint.classList.remove('show');
+                updateGroupSuggestions('');
+                // Clear ghost after applying completion
+                setGroupGhost('');
+            }
+        }
+    });
+}
+
+function setGroupGhost(prefix) {
+    const ghost = document.getElementById('groupGhost');
+    const input = document.getElementById('groupName');
+    if (!ghost || !input) return;
+    const val = String(typeof prefix === 'string' ? prefix : input.value || '');
+    if (!val) { ghost.textContent = ''; return; }
+    const all = getAllGroupNames();
+    const match = all.find(n => n.toLowerCase().startsWith(val.toLowerCase()));
+    // Only render if caret at end (avoid misalignment for mid-text edits)
+    const atEnd = input.selectionStart === input.selectionEnd && input.selectionEnd === val.length;
+    if (!match || !atEnd) { ghost.textContent = ''; return; }
+    const suffix = match.slice(val.length);
+    if (!suffix) { ghost.textContent = ''; return; }
+    ghost.innerHTML = `<span class="ghost-prefix">${val}</span><span class="ghost-suffix">${suffix}</span>`;
+}
+
+function syncGroupGhostMetrics() {
+    const input = document.getElementById('groupName');
+    const ghost = document.getElementById('groupGhost');
+    if (!input || !ghost) return;
+    const cs = window.getComputedStyle(input);
+    // Mirror key metrics & spacing
+    ghost.style.fontFamily = cs.fontFamily;
+    ghost.style.fontSize = cs.fontSize;
+    ghost.style.fontWeight = cs.fontWeight;
+    ghost.style.lineHeight = cs.lineHeight;
+    ghost.style.letterSpacing = cs.letterSpacing;
+    ghost.style.textTransform = cs.textTransform;
+    ghost.style.padding = cs.padding;
+}
+
+function updateGroupsList() {
+    const groupsList = document.getElementById('groupsList');
+    if (groupsList) { groupsList.style.display = 'none'; groupsList.innerHTML = ''; }
+    return; // side list removed
+}
+
+function setupDragAndDrop() {
+    document.addEventListener('dragstart', handleDragStart);
+    document.addEventListener('dragover', handleDragOver);
+    document.addEventListener('drop', handleDrop);
+    document.addEventListener('dragend', handleDragEnd);
+}
+
+function handleDragStart(e) {
+    // Handle task items in the list
+    if (e.target.dataset.taskId && e.target.classList.contains('task-item')) {
+        draggedElement = e.target;
+        draggedType = 'task';
+        e.dataTransfer.setData('text/plain', e.target.dataset.taskId);
+        e.target.classList.add('dragging');
+    } 
+    // Handle group items in the list
+    else if (e.target.dataset.group && e.target.classList.contains('group-item')) {
+        draggedElement = e.target;
+        draggedType = 'group';
+        e.dataTransfer.setData('text/plain', e.target.dataset.group);
+        e.target.classList.add('dragging');
+    }
+    // Handle chart rows (tasks in the chart)
+    else if (e.target.closest('.chart-row')) {
+        const chartRow = e.target.closest('.chart-row');
+        if (chartRow.dataset.taskId) {
+            draggedElement = chartRow;
+            draggedType = 'chart-task';
+            e.dataTransfer.setData('text/plain', chartRow.dataset.taskId);
+            chartRow.classList.add('dragging');
+        }
+    }
+    // Handle chart group headers - check for group header first, then group container
+    else if (e.target.closest('.chart-group-header')) {
+        const chartGroup = e.target.closest('.chart-group');
+        if (chartGroup && chartGroup.dataset.group) {
+            draggedElement = chartGroup;
+            draggedType = 'chart-group';
+            e.dataTransfer.setData('text/plain', chartGroup.dataset.group);
+            chartGroup.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        }
+    }
+    // Handle chart groups (fallback)
+    else if (e.target.closest('.chart-group')) {
+        const chartGroup = e.target.closest('.chart-group');
+        if (chartGroup.dataset.group) {
+            draggedElement = chartGroup;
+            draggedType = 'chart-group';
+            e.dataTransfer.setData('text/plain', chartGroup.dataset.group);
+            chartGroup.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        }
+    }
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    
+    // Handle drop zones in the list
+    const dropZone = e.target.closest('.drop-zone');
+    if (dropZone) {
+        dropZone.classList.add('drag-over');
+        return;
+    }
+
+    // Handle chart drop zones
+    const chartGroup = e.target.closest('.chart-group');
+    const chartRow = e.target.closest('.chart-row');
+    
+    if (draggedType === 'chart-task' || draggedType === 'task') {
+        // Allow dropping on chart groups or between chart rows
+        if (chartGroup && !chartRow) {
+            chartGroup.classList.add('drag-over');
+        } else if (chartRow && chartRow !== draggedElement) {
+            chartRow.classList.add('drag-over');
+        }
+    } else if (draggedType === 'chart-group' || draggedType === 'group') {
+        // Allow dropping between groups
+        if (chartGroup && chartGroup !== draggedElement) {
+            chartGroup.classList.add('drag-over');
+        }
+    }
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    
+    // Handle list drop zones
+    const dropZone = e.target.closest('.drop-zone');
+    if (dropZone) {
+        dropZone.classList.remove('drag-over');
+        
+        if (draggedType === 'task' || draggedType === 'chart-task') {
+            const taskId = parseInt(e.dataTransfer.getData('text/plain'));
+            const targetGroup = dropZone.dataset.group;
+            
+            if (taskId && targetGroup) {
+                updateTaskField(taskId, 'group', targetGroup);
+            }
+        }
+        return;
+    }
+
+    // Handle chart drops
+    const chartGroup = e.target.closest('.chart-group');
+    const chartRow = e.target.closest('.chart-row');
+    
+    if (draggedType === 'chart-task' || draggedType === 'task') {
+        if (chartGroup && !chartRow) {
+            // Dropped on a chart group - move task to that group
+            const taskId = parseInt(e.dataTransfer.getData('text/plain'));
+            const targetGroupName = chartGroup.dataset.group;
+            
+            if (taskId && targetGroupName) {
+                updateTaskField(taskId, 'group', targetGroupName);
+            }
+        } else if (chartRow && chartRow !== draggedElement) {
+            // Dropped on another task - reorder within group or move to target task's group
+            const draggedTaskId = parseInt(e.dataTransfer.getData('text/plain'));
+            const targetTaskId = parseInt(chartRow.dataset.taskId);
+            
+            if (draggedTaskId && targetTaskId) {
+                reorderTasks(draggedTaskId, targetTaskId);
+            }
+        }
+    } else if (draggedType === 'chart-group' || draggedType === 'group') {
+        if (chartGroup && chartGroup !== draggedElement) {
+            // Reorder groups
+            const draggedGroupName = e.dataTransfer.getData('text/plain');
+            const targetGroupName = chartGroup.dataset.group;
+            
+            if (draggedGroupName && targetGroupName) {
+                reorderGroups(draggedGroupName, targetGroupName);
+            }
+        }
+    }
+}
+
+function handleDragEnd(e) {
+    if (draggedElement) {
+        draggedElement.classList.remove('dragging');
+        draggedElement = null;
+        draggedType = null;
+    }
+    
+    // Remove all drag-over classes
+    document.querySelectorAll('.drag-over').forEach(el => {
+        el.classList.remove('drag-over');
+    });
+}
+
+function reorderTasks(draggedTaskId, targetTaskId) {
+    const draggedTask = tasks.find(t => t.id === draggedTaskId);
+    const targetTask = tasks.find(t => t.id === targetTaskId);
+    
+    if (!draggedTask || !targetTask) return;
+    
+    // If tasks are in different groups, move dragged task to target's group
+    if (draggedTask.group !== targetTask.group) {
+        updateTaskField(draggedTaskId, 'group', targetTask.group);
+    } else {
+        // Reorder within the same group
+        const groupTasks = tasks.filter(t => t.group === draggedTask.group);
+        const draggedIndex = groupTasks.findIndex(t => t.id === draggedTaskId);
+        const targetIndex = groupTasks.findIndex(t => t.id === targetTaskId);
+        
+        if (draggedIndex !== -1 && targetIndex !== -1) {
+            // Remove the dragged task from its current position
+            const taskIndex = tasks.findIndex(t => t.id === draggedTaskId);
+            const [movedTask] = tasks.splice(taskIndex, 1);
+            
+            // Find the new position in the main tasks array
+            const targetTaskIndex = tasks.findIndex(t => t.id === targetTaskId);
+            tasks.splice(targetTaskIndex, 0, movedTask);
+            
+            markAsChanged();
+            updateGroupsList();
+            updateChart();
+        }
+    }
+}
+
+function reorderGroups(draggedGroupName, targetGroupName) {
+    const draggedIndex = groupOrder.indexOf(draggedGroupName);
+    const targetIndex = groupOrder.indexOf(targetGroupName);
+    
+    if (draggedIndex !== -1 && targetIndex !== -1) {
+        groupOrder.splice(draggedIndex, 1);
+        groupOrder.splice(targetIndex, 0, draggedGroupName);
+        markAsChanged();
+        updateGroupsList();
+        updateChart();
+    }
+}
+
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric',
+        year: 'numeric'
+    });
+}
+
+function updateChart() {
+    const chartContainer = document.getElementById('ganttChart');
+    
+    if (tasks.length === 0) {
+        chartContainer.innerHTML = '<div class="no-tasks">Add tasks to see your Gantt chart</div>';
+        return;
+    }
+
+    const allDates = tasks.flatMap(task => [new Date(task.startDate), new Date(task.endDate)]);
+    const minDate = new Date(Math.min(...allDates));
+    const maxDate = new Date(Math.max(...allDates));
+    
+    const months = getMonthRange(minDate, maxDate);
+    const quarterGroups = groupMonthsByQuarters(months);
+
+    const quartersHTML = quarterGroups.map(quarter => {
+        return `
+            <div class="timeline-quarter" style="flex: ${quarter.months.length};">
+                <div class="quarter-year">${quarter.year}</div>
+                <div class="quarter-name">Q${quarter.quarter}</div>
+            </div>
+        `;
+    }).join('');
+
+    const monthsHTML = months.map(month => `
+        <div class="month-cell">
+            ${getMonthShortName(month.month)} ${month.year.toString().slice(-2)}
+        </div>
+    `).join('');
+
+    const chartHTML = `
+        <div class="chart-header">
+            <div class="chart-title">Epics & Activities</div>
+            <div class="timeline-container">
+                <div class="timeline-quarters">${quartersHTML}</div>
+                <div class="timeline-months">${monthsHTML}</div>
+            </div>
+        </div>
+        <div class="chart-body">
+            ${createGroupChartHTML(months)}
+        </div>
+    `;
+
+    chartContainer.innerHTML = chartHTML;
+}
+
+function createGroupChartHTML(months) {
+    return groupOrder.filter(groupName => groups[groupName]).map(groupName => {
+        const groupTasks = tasks.filter(t => t.group === groupName);
+        const isExpanded = groupStates[groupName];
+        
+        let groupStart = null;
+        let groupEnd = null;
+        
+        if (groupTasks.length > 0) {
+            const groupDates = groupTasks.flatMap(task => [new Date(task.startDate), new Date(task.endDate)]);
+            groupStart = new Date(Math.min(...groupDates));
+            groupEnd = new Date(Math.max(...groupDates));
+        }
+
+        const groupBarHTML = groupStart && groupEnd ? 
+            createGroupBar(groupStart, groupEnd, months, groupName) : '';
+
+        const tasksHTML = isExpanded ? groupTasks.map(task => 
+            createTaskRow(task, months)
+        ).join('') : '';
+
+        const safeGroupName = groupName.replace(/'/g, "\\'");
+        const groupColor = groups[groupName]?.color || '#667eea';
+        
+        return `
+            <div class="chart-group" draggable="true" data-group="${safeGroupName}">
+                <div class="chart-group-header" onclick="if(!event.target.closest('.kebab-menu')) toggleGroup('${safeGroupName}')">
+                    <div class="chart-group-label">
+                        <span class="chart-group-toggle ${isExpanded ? '' : 'collapsed'}">▼</span>
+                        <span>${groupName} (${groupTasks.length})</span>
+                    </div>
+                    
+                    <!-- Kebab menu for group actions -->
+                    <div class="kebab-menu" onclick="event.stopPropagation()">
+                        <div class="kebab-icon" onclick="event.stopPropagation(); toggleKebabMenu(this)">⋮</div>
+                        <div class="kebab-dropdown">
+                            <div class="kebab-item" onclick="openGroupEditModal('${safeGroupName}')">
+                                <span class="kebab-item-icon">✏️</span>
+                                <span>Rename</span>
+                            </div>
+                            <div class="kebab-item" onclick="
+                                const colorInput = document.createElement('input');
+                                colorInput.type = 'color';
+                                colorInput.value = '${groupColor}';
+                                colorInput.onchange = (e) => updateGroupField('${safeGroupName}', 'color', e.target.value);
+                                colorInput.click();
+                            ">
+                                <span class="kebab-item-icon">🎨</span>
+                                <span>Change Color</span>
+                            </div>
+                            <div class="kebab-item danger" onclick="deleteGroup('${safeGroupName}')">
+                                <span class="kebab-item-icon">🗑️</span>
+                                <span>Delete Group</span>
+                            </div>
+                        </div>
+                    </div>
+                    ${!isExpanded ? `<div class=\"chart-group-timeline\">${groupBarHTML}</div>` : ``}
+                </div>
+                <div class="chart-group-tasks ${isExpanded ? '' : 'collapsed'}">
+                    ${tasksHTML}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function createGroupBar(startDate, endDate, months, groupName) {
+    const startMonth = {
+        year: startDate.getFullYear(),
+        month: startDate.getMonth() + 1
+    };
+    const endMonth = {
+        year: endDate.getFullYear(),
+        month: endDate.getMonth() + 1
+    };
+
+    const startIndex = months.findIndex(m => 
+        m.year === startMonth.year && m.month === startMonth.month
+    );
+    const endIndex = months.findIndex(m => 
+        m.year === endMonth.year && m.month === endMonth.month
+    );
+    
+    if (startIndex === -1 || endIndex === -1) return '';
+    
+    const totalMonths = months.length;
+    const monthWidth = 100 / totalMonths;
+    
+    const startMonthDate = new Date(startMonth.year, startMonth.month - 1, 1);
+    const startMonthEnd = new Date(startMonth.year, startMonth.month, 0);
+    const startMonthDays = startMonthEnd.getDate();
+    const daysFromMonthStart = startDate.getDate() - 1;
+    const startOffset = (daysFromMonthStart / startMonthDays) * monthWidth;
+    
+    const endMonthDate = new Date(endMonth.year, endMonth.month - 1, 1);
+    const endMonthEnd = new Date(endMonth.year, endMonth.month, 0);
+    const endMonthDays = endMonthEnd.getDate();
+    const daysToMonthEnd = endDate.getDate();
+    const endOffset = (daysToMonthEnd / endMonthDays) * monthWidth;
+    
+    const left = (startIndex * monthWidth) + startOffset;
+    const width = ((endIndex - startIndex) * monthWidth) + endOffset - startOffset;
+    
+    const duration = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+    const groupColor = groups[groupName]?.color || '#667eea';
+
+    return `
+        <div class="group-bar" 
+             style="left: ${left}%; width: ${width}%; background: linear-gradient(45deg, ${groupColor}, ${adjustBrightness(groupColor, -20)});"
+             title="${groupName}: ${formatDate(startDate)} - ${formatDate(endDate)} (${duration} day${duration !== 1 ? 's' : ''})">
+        </div>
+    `;
+}
+
+function createTaskRow(task, months) {
+    const taskStart = new Date(task.startDate);
+    const taskEnd = new Date(task.endDate);
+    
+    const startMonth = {
+        year: taskStart.getFullYear(),
+        month: taskStart.getMonth() + 1
+    };
+    const endMonth = {
+        year: taskEnd.getFullYear(),
+        month: taskEnd.getMonth() + 1
+    };
+
+    const startIndex = months.findIndex(m => 
+        m.year === startMonth.year && m.month === startMonth.month
+    );
+    const endIndex = months.findIndex(m => 
+        m.year === endMonth.year && m.month === endMonth.month
+    );
+    
+    if (startIndex === -1 || endIndex === -1) return '';
+    
+    const totalMonths = months.length;
+    const monthWidth = 100 / totalMonths;
+    
+    const startMonthDate = new Date(startMonth.year, startMonth.month - 1, 1);
+    const startMonthEnd = new Date(startMonth.year, startMonth.month, 0);
+    const startMonthDays = startMonthEnd.getDate();
+    const daysFromMonthStart = taskStart.getDate() - 1;
+    const startOffset = (daysFromMonthStart / startMonthDays) * monthWidth;
+    
+    const endMonthDate = new Date(endMonth.year, endMonth.month - 1, 1);
+    const endMonthEnd = new Date(endMonth.year, endMonth.month, 0);
+    const endMonthDays = endMonthEnd.getDate();
+    const daysToMonthEnd = taskEnd.getDate();
+    const endOffset = (daysToMonthEnd / endMonthDays) * monthWidth;
+    
+    const left = (startIndex * monthWidth) + startOffset;
+    const width = ((endIndex - startIndex) * monthWidth) + endOffset - startOffset;
+    
+    const duration = Math.ceil((taskEnd - taskStart) / (1000 * 60 * 60 * 24)) + 1;
+
+    return `
+        <div class="chart-row" draggable="true" data-task-id="${task.id}">
+            <div class="task-label" style="border-left-color: ${task.color}" onclick="event.stopPropagation()">
+                <span class="task-label-text">${task.name}</span>
+                
+                <!-- Kebab menu for task actions -->
+                <div class="kebab-menu" onclick="event.stopPropagation()">
+                    <div class="kebab-icon" onclick="event.stopPropagation(); toggleKebabMenu(this)">⋮</div>
+                    <div class="kebab-dropdown">
+                        <div class="kebab-item" onclick="openTaskEditModal(${task.id})">
+                            <span class="kebab-item-icon">✏️</span>
+                            <span>Rename</span>
+                        </div>
+                        <div class="kebab-item" onclick="openTaskDateModal(${task.id}); this.closest('.kebab-dropdown')?.classList.remove('show');">
+                            <span class="kebab-item-icon">📅</span>
+                            <span>Edit Dates…</span>
+                        </div>
+                        <div class="kebab-item" onclick="openTaskColorModal(${task.id}); this.closest('.kebab-dropdown')?.classList.remove('show');">
+                            <span class="kebab-item-icon">🎨</span>
+                            <span>Change Color</span>
+                        </div>
+                        <div class="kebab-item danger" onclick="deleteTask(${task.id})">
+                            <span class="kebab-item-icon">🗑️</span>
+                            <span>Delete Task</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="timeline-track">
+                <div class="task-bar" 
+                     style="left: ${left}%; width: ${width}%; background: linear-gradient(45deg, ${task.color}, ${adjustBrightness(task.color, -20)});"
+                     title="${task.name}: ${formatDate(task.startDate)} - ${formatDate(task.endDate)} (${duration} day${duration !== 1 ? 's' : ''})">
+                    ${width > 15 ? task.name : ''}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function getMonthRange(startDate, endDate) {
+    const months = [];
+    const current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+    const end = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+
+    while (current <= end) {
+        months.push({
+            year: current.getFullYear(),
+            month: current.getMonth() + 1
+        });
+        current.setMonth(current.getMonth() + 1);
+    }
+
+    return months;
+}
+
+function groupMonthsByQuarters(months) {
+    const quarters = [];
+    let currentQuarter = null;
+
+    months.forEach(month => {
+        const quarter = Math.ceil(month.month / 3);
+        
+        if (!currentQuarter || 
+            currentQuarter.quarter !== quarter || 
+            currentQuarter.year !== month.year) {
+            
+            currentQuarter = {
+                year: month.year,
+                quarter: quarter,
+                months: []
+            };
+            quarters.push(currentQuarter);
+        }
+        
+        currentQuarter.months.push(month);
+    });
+
+    return quarters;
+}
+
+function getMonthShortName(monthNum) {
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return names[monthNum - 1];
+}
+
+function adjustBrightness(color, amount) {
+    const usePound = color[0] === '#';
+    const col = usePound ? color.slice(1) : color;
+    const num = parseInt(col, 16);
+    let r = (num >> 16) + amount;
+    let g = (num >> 8 & 0x00FF) + amount;
+    let b = (num & 0x0000FF) + amount;
+    r = r > 255 ? 255 : r < 0 ? 0 : r;
+    g = g > 255 ? 255 : g < 0 ? 0 : g;
+    b = b > 255 ? 255 : b < 0 ? 0 : b;
+    return (usePound ? '#' : '') + (r << 16 | g << 8 | b).toString(16).padStart(6, '0');
+}
+
+// Export chart as PNG using html2canvas with export-specific style overrides
+function saveChartAsPNG() {
+    try {
+        const exportRoot = document.querySelector('.container');
+        const target = document.querySelector('.chart-container') || document.getElementById('ganttChart');
+        if (!target) {
+            showNotification('Nothing to export yet', 'error');
+            return;
+        }
+        // Toggle export mode to neutralize unsupported CSS during rasterization
+        exportRoot.classList.add('export-mode');
+        // Allow UI to apply styles
+        requestAnimationFrame(() => {
+            html2canvas(target, {
+                backgroundColor: null, // keep container/background as-is
+                scale: window.devicePixelRatio > 1 ? 2 : 2,
+                useCORS: true,
+                logging: false
+            }).then(canvas => {
+                // Resize to fit PowerPoint-friendly width while preserving aspect ratio
+                const MAX_W = 1920;
+                let outCanvas = canvas;
+                if (canvas.width > MAX_W) {
+                    const ratio = MAX_W / canvas.width;
+                    const oc = document.createElement('canvas');
+                    oc.width = Math.round(canvas.width * ratio);
+                    oc.height = Math.round(canvas.height * ratio);
+                    const ctx = oc.getContext('2d');
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(canvas, 0, 0, oc.width, oc.height);
+                    outCanvas = oc;
+                }
+                const link = document.createElement('a');
+                const ts = new Date().toISOString().replace(/[:.]/g, '-');
+                link.download = `gantt-chart-${ts}.png`;
+                link.href = outCanvas.toDataURL('image/png');
+                link.click();
+                showNotification('PNG exported', 'success');
+            }).catch(err => {
+                console.error('Export failed:', err);
+                showNotification('PNG export failed', 'error');
+            }).finally(() => {
+                exportRoot.classList.remove('export-mode');
+            });
+        });
+    } catch (e) {
+        console.error(e);
+        showNotification('PNG export failed', 'error');
+        const exportRoot = document.querySelector('.container');
+        if (exportRoot) exportRoot.classList.remove('export-mode');
+    }
+}
+
+// Export a PNG with all groups collapsed, then restore the original expansion state
+function saveCollapsedChartAsPNG() {
+    const exportRoot = document.querySelector('.container');
+    const target = document.querySelector('.chart-container') || document.getElementById('ganttChart');
+    if (!target) {
+        showNotification('Nothing to export yet', 'error');
+        return;
+    }
+
+    // Snapshot current expansion state
+    const prevStates = { ...groupStates };
+
+    try {
+        // Collapse all groups
+        Object.keys(groups || {}).forEach(g => { groupStates[g] = false; });
+        updateChart();
+
+        // Enable export mode and render next frame
+        exportRoot.classList.add('export-mode');
+        requestAnimationFrame(() => {
+            html2canvas(target, {
+                backgroundColor: null,
+                scale: window.devicePixelRatio > 1 ? 2 : 2,
+                useCORS: true,
+                logging: false
+            }).then(canvas => {
+                // Resize to fit PowerPoint-friendly width while preserving aspect ratio
+                const MAX_W = 1920;
+                let outCanvas = canvas;
+                if (canvas.width > MAX_W) {
+                    const ratio = MAX_W / canvas.width;
+                    const oc = document.createElement('canvas');
+                    oc.width = Math.round(canvas.width * ratio);
+                    oc.height = Math.round(canvas.height * ratio);
+                    const ctx = oc.getContext('2d');
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(canvas, 0, 0, oc.width, oc.height);
+                    outCanvas = oc;
+                }
+                const link = document.createElement('a');
+                const ts = new Date().toISOString().replace(/[:.]/g, '-');
+                link.download = `gantt-chart-collapsed-${ts}.png`;
+                link.href = outCanvas.toDataURL('image/png');
+                link.click();
+                showNotification('Collapsed PNG exported', 'success');
+            }).catch(err => {
+                console.error('Collapsed export failed:', err);
+                showNotification('Collapsed PNG export failed', 'error');
+            }).finally(() => {
+                // Restore UI/state
+                Object.keys(prevStates).forEach(g => { groupStates[g] = prevStates[g]; });
+                exportRoot.classList.remove('export-mode');
+                updateChart();
+            });
+        });
+    } catch (e) {
+        console.error(e);
+        showNotification('Collapsed PNG export failed', 'error');
+        // Ensure state is restored even on sync errors
+        Object.keys(prevStates).forEach(g => { groupStates[g] = prevStates[g]; });
+        if (exportRoot) exportRoot.classList.remove('export-mode');
+        updateChart();
+    }
+}
+
+// Add keyboard shortcuts
+document.addEventListener('keydown', function(event) {
+    if (event.ctrlKey || event.metaKey) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            addTask();
+        } else if (event.key === 's') {
+            event.preventDefault();
+            saveToFile();
+        }
+    }
+    if (event.key === 'Escape') {
+        clearForm();
+    }
+});
+
+// Auto-focus on task name input and draw subtle attention
+(function(){
+    const tn = document.getElementById('taskName');
+    if (tn) {
+        tn.focus();
+        triggerTaskNameAttention(1800);
+    }
+})();
+
+// Project duplication
+function duplicateProject(index) {
+    if (!projects[index]) return;
+    // Ensure current active project is saved
+    syncActiveFromGlobals();
+    const source = projects[index];
+    const clone = JSON.parse(JSON.stringify(source));
+    // Generate unique name
+    const base = (source.name || 'Untitled') + ' (copy)';
+    let name = base;
+    let n = 2;
+    const names = new Set(projects.map(p => p.name || 'Untitled'));
+    while (names.has(name)) { name = `${base} ${n++}`; }
+    clone.name = name;
+    // Insert duplicate after source and activate it
+    projects.splice(index + 1, 0, clone);
+    activeProjectIndex = index + 1;
+    // Refresh UI/state for the new active project
+    syncGlobalsFromActive();
+    renderProjectTabs();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    markAsChanged();
+    if (typeof showNotification === 'function') showNotification(`Duplicated project as "${name}"`, 'success');
+}
