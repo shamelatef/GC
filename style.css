@@ -759,12 +759,41 @@ body {
     text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
     transition: all 0.2s ease;
-    cursor: pointer;
+    cursor: default;
 }
 
 .task-bar:hover {
     transform: translateY(-1px);
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Resize handles on task bars */
+.task-bar .resize-handle {
+    position: absolute;
+    top: 0;
+    width: 6px;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.6);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+.task-bar .resize-handle.left {
+    left: 0;
+    border-top-left-radius: 12px;
+    border-bottom-left-radius: 12px;
+    cursor: ew-resize;
+}
+.task-bar .resize-handle.right {
+    right: 0;
+    border-top-right-radius: 12px;
+    border-bottom-right-radius: 12px;
+    cursor: ew-resize;
+}
+.task-bar:hover .resize-handle {
+    opacity: 1;
+}
+.task-bar.resizing {
+    transition: none !important;
 }
 
 .group-bar {
