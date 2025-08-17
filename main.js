@@ -884,6 +884,123 @@ function updateTaskDates(taskId, start, end) {
 
 // Task Color Modal Logic
 let currentColorModalTaskId = null;
+
+// Add Task Modal Logic
+let addTaskModalKeyHandlerBound = false;
+function openAddTaskModal(groupName) {
+    const backdrop = document.getElementById('addTaskModal');
+    const nameInput = document.getElementById('addTaskNameInput');
+    const groupInput = document.getElementById('addTaskGroupName');
+    const startInput = document.getElementById('addTaskStartDate');
+    const endInput = document.getElementById('addTaskEndDate');
+    const colorInput = document.getElementById('addTaskColor');
+
+    if (!backdrop || !nameInput || !groupInput || !startInput || !endInput || !colorInput) return;
+
+    // Prefill readonly group
+    groupInput.value = groupName || '';
+    groupInput.readOnly = true;
+
+    // Defaults: today/tomorrow and group color if exists
+    const today = new Date();
+    const isoToday = today.toISOString().split('T')[0];
+    const tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
+    const isoTmr = tmr.toISOString().split('T')[0];
+    if (!startInput.value) startInput.value = isoToday;
+    if (!endInput.value) endInput.value = isoTmr;
+    const existingGroupColor = groups[groupName]?.color || '#667eea';
+    colorInput.value = existingGroupColor;
+
+    backdrop.style.display = 'flex';
+    setTimeout(() => { nameInput.focus(); nameInput.select(); }, 0);
+
+    // Keyboard: Enter = confirm, Escape = close (scoped while modal open)
+    if (!addTaskModalKeyHandlerBound) {
+        addTaskModalKeyHandlerBound = true;
+        backdrop.addEventListener('keydown', function(e){
+            if (backdrop.style.display === 'none') return;
+            if (e.key === 'Enter') { e.preventDefault(); confirmAddTaskModal(); }
+            if (e.key === 'Escape') { e.preventDefault(); closeAddTaskModal(); }
+        });
+    }
+}
+
+function closeAddTaskModal() {
+    const backdrop = document.getElementById('addTaskModal');
+    const nameInput = document.getElementById('addTaskNameInput');
+    const groupInput = document.getElementById('addTaskGroupName');
+    const startInput = document.getElementById('addTaskStartDate');
+    const endInput = document.getElementById('addTaskEndDate');
+    const colorInput = document.getElementById('addTaskColor');
+    if (!backdrop) return;
+    backdrop.style.display = 'none';
+    if (nameInput) { nameInput.value = ''; nameInput.classList.remove('input-error'); }
+    if (groupInput) groupInput.value = '';
+    if (startInput) startInput.value = '';
+    if (endInput) endInput.value = '';
+    if (colorInput) colorInput.value = '#667eea';
+}
+
+function confirmAddTaskModal() {
+    const nameInput = document.getElementById('addTaskNameInput');
+    const groupInput = document.getElementById('addTaskGroupName');
+    const startInput = document.getElementById('addTaskStartDate');
+    const endInput = document.getElementById('addTaskEndDate');
+    const colorInput = document.getElementById('addTaskColor');
+
+    if (!nameInput || !groupInput || !startInput || !endInput || !colorInput) return;
+
+    const taskName = (nameInput.value || '').trim();
+    const groupName = (groupInput.value || '').trim() || 'Ungrouped';
+    const startDate = startInput.value;
+    const endDate = endInput.value;
+    const taskColor = colorInput.value || '#667eea';
+
+    // Clear previous error state
+    nameInput.classList.remove('input-error');
+
+    // Validation (reuse logic like addTask)
+    if (!taskName || !startDate || !endDate) {
+        if (!taskName) {
+            nameInput.classList.add('input-error');
+            nameInput.focus();
+        }
+        return;
+    }
+    if (new Date(startDate) > new Date(endDate)) {
+        showNotification('Start date cannot be after end date', 'error');
+        endInput.focus();
+        return;
+    }
+
+    const task = {
+        id: Date.now(),
+        name: taskName,
+        group: groupName,
+        startDate: startDate,
+        endDate: endDate,
+        color: taskColor
+    };
+
+    tasks.push(task);
+
+    if (groupName && groupName !== 'Ungrouped') {
+        previousGroupInputs.add(groupName);
+    }
+
+    if (!groups[groupName]) {
+        groups[groupName] = { name: groupName, color: taskColor };
+        groupStates[groupName] = true;
+        groupOrder.push(groupName);
+    }
+
+    markAsChanged();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    closeAddTaskModal();
+    showNotification('Task added successfully', 'success');
+}
 function openTaskColorModal(taskId) {
     currentColorModalTaskId = taskId;
     const t = tasks.find(x => x.id === taskId);
@@ -1750,7 +1867,11 @@ function createGroupChartHTML(months) {
                                 <span class="kebab-item-icon">🎨</span>
                                 <span>Change Color</span>
                             </div>
-                            <div class="kebab-item danger" onclick="deleteGroup('${safeGroupName}')">
+                            <div class="kebab-item" onclick="openAddTaskModal('${safeGroupName}')">
+                                <span class="kebab-item-icon">➕</span>
+                                <span>Add Task</span>
+                            </div>
+                            <div class="kebab-item" onclick="deleteGroup('${groupName}')">
                                 <span class="kebab-item-icon">🗑️</span>
                                 <span>Delete Group</span>
                             </div>
