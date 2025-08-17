@@ -148,11 +148,31 @@
             <div class="button-group">
                 <button class="btn btn-primary" onclick="addTask()">Add Task</button>
                 <button class="btn btn-tertiary" onclick="toggleAllGroups()">Collapse All</button>
-                <button class="btn btn-secondary" onclick="saveChartAsPNG()">Save PNG</button>
                 <button class="btn btn-success" onclick="saveToFile()">Save File</button>
                 <button class="btn btn-info" onclick="document.getElementById('fileInput').click()">Load File</button>
-                <button class="btn btn-info" onclick="document.getElementById('excelInput').click()">Import CSV</button>
-                <button class="btn" onclick="exportCSV()">Export CSV</button>
+
+                <!-- Overflow menu for less-frequent actions -->
+                <div class="kebab-menu" style="margin-left:auto;">
+                    <button class="btn" onclick="event.stopPropagation(); toggleKebabMenu(this)" aria-haspopup="true" aria-expanded="false">More ▾</button>
+                    <div class="kebab-dropdown" role="menu">
+                        <div class="kebab-item" role="menuitem" onclick="saveChartAsPNG(); this.closest('.kebab-dropdown')?.classList.remove('show');">
+                            <span class="kebab-item-icon">🖼️</span>
+                            <span>Save PNG</span>
+                        </div>
+                        <div class="kebab-item" role="menuitem" onclick="document.getElementById('fileInput').click(); this.closest('.kebab-dropdown')?.classList.remove('show');">
+                            <span class="kebab-item-icon">📥</span>
+                            <span>Load File (JSON)</span>
+                        </div>
+                        <div class="kebab-item" role="menuitem" onclick="document.getElementById('excelInput').click(); this.closest('.kebab-dropdown')?.classList.remove('show');">
+                            <span class="kebab-item-icon">⬇️</span>
+                            <span>Import (CSV/XLSX)</span>
+                        </div>
+                        <div class="kebab-item" role="menuitem" onclick="exportCSV(); this.closest('.kebab-dropdown')?.classList.remove('show');">
+                            <span class="kebab-item-icon">📤</span>
+                            <span>Export CSV</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 

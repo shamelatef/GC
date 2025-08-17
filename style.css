@@ -348,7 +348,7 @@ body {
 
 .chart-header {
     display: grid;
-    grid-template-columns: 250px 1fr;
+    grid-template-columns: 220px 1fr; /* align with .chart-row left column */
     margin-bottom: 20px;
     align-items: start;
 }
@@ -443,7 +443,7 @@ body {
 
 .chart-group-header {
     display: grid;
-    grid-template-columns: 250px 1fr;
+    grid-template-columns: 220px 1fr;
     align-items: center;
     margin-bottom: 5px;
     background: linear-gradient(135deg, #f0f4ff,rgb(139, 176, 240));
@@ -745,6 +745,23 @@ body {
     overflow: hidden;
 }
 
+/* Month/Quarter vertical guides inside each timeline track */
+.timeline-grid {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+}
+.timeline-grid .vline,
+.timeline-grid .qline {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+}
+.timeline-grid .vline { border-left: 1px solid rgba(0,0,0,0.06); }
+.timeline-grid .qline { border-left: 2px solid rgba(102,126,234,0.25); }
+
 .task-bar {
     position: absolute;
     top: 0;
@@ -760,6 +777,7 @@ body {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
     transition: all 0.2s ease;
     cursor: default;
+    z-index: 1; /* render over grid lines */
 }
 
 .task-bar:hover {
@@ -951,6 +969,15 @@ body {
 .project-tab .duplicate:hover {
     opacity: 1;
     background: rgba(0,0,0,0.06);
+}
+
+/* Accessible focus states */
+.btn:focus-visible,
+.project-tab:focus-visible,
+.kebab-item:focus-visible,
+.kebab-icon:focus-visible {
+    outline: 3px solid rgba(102,126,234,0.45);
+    outline-offset: 2px;
 }
 
 /* Rename modal */

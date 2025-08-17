@@ -453,33 +453,74 @@ window.addEventListener('beforeunload', function(e) {
 });
 
 // Data management functions
-function loadDataFromObject(data) {
-    // v3 format: multiple projects
-    if (data.version === '3.0' && Array.isArray(data.projects)) {
-        projects = data.projects.map(p => ({
-            name: p.name || 'Untitled',
-            tasks: p.tasks || [],
-            groups: p.groups || {},
-            groupStates: p.groupStates || {},
-            groupOrder: p.groupOrder || Object.keys(p.groups || {})
-        }));
-        activeProjectIndex = Math.min(Math.max(0, data.activeProjectIndex || 0), projects.length - 1);
-    } else if (data.tasks || data.groups) {
-        // v2 single project fallback
-        projects = [{
-            name: data.name || 'Project 1',
-            tasks: data.tasks || [],
-            groups: data.groups || {},
-            groupStates: data.groupStates || {},
-            groupOrder: data.groupOrder || Object.keys(data.groups || {})
-        }];
-        activeProjectIndex = 0;
-    } else if (Array.isArray(data)) {
-        // Just in case: raw array of projects
-        projects = data;
-        activeProjectIndex = 0;
+function loadDataFromObject(data, options = { mode: 'replaceAll' }) {
+    const mode = options.mode || 'replaceAll';
+    // Helper: normalize a project object
+    const normalizeProject = (p) => ({
+        name: p.name || 'Untitled',
+        tasks: p.tasks || [],
+        groups: p.groups || {},
+        groupStates: p.groupStates || {},
+        groupOrder: p.groupOrder || Object.keys(p.groups || {})
+    });
+
+    const isV3 = data && data.version === '3.0' && Array.isArray(data.projects);
+    const isV2 = data && (Array.isArray(data.tasks) || (data.groups && typeof data.groups === 'object'));
+    const isProjectsArray = Array.isArray(data) && data.length > 0 && data.every(p => typeof p === 'object');
+
+    if (mode === 'replaceAll') {
+        if (isV3) {
+            projects = data.projects.map(normalizeProject);
+            activeProjectIndex = Math.min(Math.max(0, data.activeProjectIndex || 0), projects.length - 1);
+        } else if (isV2) {
+            projects = [normalizeProject(data)];
+            activeProjectIndex = 0;
+        } else if (isProjectsArray) {
+            projects = data.map(normalizeProject);
+            activeProjectIndex = 0;
+        }
+    } else if (mode === 'append') {
+        // Append projects to existing list
+        if (!Array.isArray(projects)) projects = [];
+        if (isV3) {
+            projects.push(...data.projects.map(normalizeProject));
+        } else if (isProjectsArray) {
+            projects.push(...data.map(normalizeProject));
+        } else if (isV2) {
+            // single project: append as a new project using data.name if present
+            projects.push(normalizeProject(data));
+        }
+        // Keep current active project
+    } else if (mode === 'intoActive') {
+        // Merge/replace into the current active project only (for single-project files)
+        if (!projects || projects.length === 0) {
+            projects = [normalizeProject({ name: 'Project 1' })];
+            activeProjectIndex = 0;
+        }
+        const p = projects[activeProjectIndex] || normalizeProject({});
+        if (isV2) {
+            projects[activeProjectIndex] = normalizeProject({
+                name: data.name || p.name,
+                tasks: data.tasks || [],
+                groups: data.groups || {},
+                groupStates: data.groupStates || {},
+                groupOrder: data.groupOrder || Object.keys(data.groups || {})
+            });
+        } else if (isV3 && Array.isArray(data.projects) && data.projects.length === 1) {
+            // If exactly one project in v3, load it into active
+            projects[activeProjectIndex] = normalizeProject(data.projects[0]);
+        } else {
+            // Fallback: treat as append if it's multi-project
+            const toAppend = isV3 ? data.projects
+                           : isProjectsArray ? data
+                           : [];
+            if (toAppend && toAppend.length) {
+                projects.push(...toAppend.map(normalizeProject));
+            }
+        }
     }
 
+    // Refresh UI from active
     syncGlobalsFromActive();
     renderProjectTabs();
     updateGroupsList();
@@ -596,18 +637,35 @@ function loadFromFile(input) {
     const reader = new FileReader();
     reader.onload = function(e) {
         try {
-            const data = JSON.parse(e.target.result);
-            
-            if (data.version && data.tasks && data.groups) {
-                loadDataFromObject(data);
-                localStorage.removeItem('gantt_autosave'); // Clear auto-save after loading file
-                showNotification('Data loaded successfully', 'success');
+            const text = e.target.result;
+            const data = JSON.parse(text);
+
+            const isV3 = data && data.version === '3.0' && Array.isArray(data.projects);
+            const isV2 = data && (Array.isArray(data.tasks) || (data.groups && typeof data.groups === 'object'));
+            const isProjectsArray = Array.isArray(data) && data.length > 0 && data.every(p => typeof p === 'object');
+
+            if (isV3 || isV2 || isProjectsArray) {
+                const beforeCount = Array.isArray(projects) ? projects.length : 0;
+                if (isV3 || isProjectsArray) {
+                    // Multi-project inputs: append new projects
+                    const addCount = isV3 ? (data.projects?.length || 0) : data.length;
+                    loadDataFromObject(data, { mode: 'append' });
+                    localStorage.removeItem('gantt_autosave');
+                    const afterCount = Array.isArray(projects) ? projects.length : 0;
+                    const added = Math.max(0, afterCount - beforeCount);
+                    showNotification(`Added ${added || addCount} project${(added || addCount) !== 1 ? 's' : ''} from file`, 'success');
+                } else if (isV2) {
+                    // Single-project inputs: load into active project only
+                    loadDataFromObject(data, { mode: 'intoActive' });
+                    localStorage.removeItem('gantt_autosave');
+                    showNotification('Replaced current project with loaded file', 'success');
+                }
             } else {
-                showNotification('Invalid file format', 'error');
+                showNotification('Invalid file format. Please select a JSON file exported from this app.', 'error');
             }
         } catch (error) {
             console.error('Error loading file:', error);
-            showNotification('Error loading file', 'error');
+            showNotification('Invalid JSON file. Please check the contents.', 'error');
         }
     };
     reader.readAsText(file);
@@ -1715,7 +1773,7 @@ function createGroupChartHTML(months) {
         return `
             <div class="chart-group" draggable="true" data-group="${safeGroupName}">
                 <div class="chart-group-header" onclick="if(!event.target.closest('.kebab-menu')) toggleGroup('${safeGroupName}')">
-                    <div class="chart-group-label">
+                    <div class="chart-group-label" ondblclick="openGroupEditModal('${safeGroupName}')" title="Double-click to rename group">
                         <span class="chart-group-toggle ${isExpanded ? '' : 'collapsed'}">▼</span>
                         <span>${groupName} (${groupTasks.length})</span>
                     </div>
@@ -1848,10 +1906,16 @@ function createTaskRow(task, months) {
     
     const duration = Math.ceil((taskEnd - taskStart) / (1000 * 60 * 60 * 24)) + 1;
 
+    const gridLines = months.slice(1).map((m, idx) => {
+        const pos = ((idx + 1) * 100 / months.length);
+        const isQuarter = ((m.month - 1) % 3 === 0);
+        return `<div class="${isQuarter ? 'qline' : 'vline'}" style="left: ${pos}%"></div>`;
+    }).join('');
+
     return `
         <div class="chart-row" draggable="true" data-task-id="${task.id}">
             <div class="task-label" style="border-left-color: ${task.color}" onclick="event.stopPropagation()">
-                <span class="task-label-text">${task.name}</span>
+                <span class="task-label-text" ondblclick="openTaskEditModal(${task.id})" title="Double-click to rename task">${task.name}</span>
                 
                 <!-- Kebab menu for task actions -->
                 <div class="kebab-menu" onclick="event.stopPropagation()">
@@ -1877,6 +1941,7 @@ function createTaskRow(task, months) {
                 </div>
             </div>
             <div class="timeline-track">
+                <div class="timeline-grid" aria-hidden="true">${gridLines}</div>
                 <div class="task-bar" data-task-id="${task.id}"
                      style="left: ${left}%; width: ${width}%; background: linear-gradient(45deg, ${task.color}, ${adjustBrightness(task.color, -20)});"
                      title="${task.name}: ${formatDate(task.startDate)} - ${formatDate(task.endDate)} (${duration} day${duration !== 1 ? 's' : ''})">
