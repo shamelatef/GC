@@ -655,6 +655,10 @@ function parseCSV(text) {
     const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
     if (lines.length === 0) return [];
     const headers = splitCSVLine(lines[0]).map(h => h.trim());
+    // Remove BOM if present on the first header
+    if (headers.length > 0) {
+        headers[0] = headers[0].replace(/^\uFEFF/, '');
+    }
     const rows = [];
     for (let i = 1; i < lines.length; i++) {
         const cols = splitCSVLine(lines[i]);
@@ -762,17 +766,31 @@ function processImportedRows(rows) {
 }
 
 function usDateToISO(us) {
-    // Accept mm/dd/yyyy or m/d/yyyy, trim spaces
-    const m = String(us).trim().match(/^([0-1]?\d)\/([0-3]?\d)\/(\d{4})$/);
-    if (!m) return null;
-    const mm = m[1].padStart(2, '0');
-    const dd = m[2].padStart(2, '0');
-    const yyyy = m[3];
-    // Basic range checks
-    const month = parseInt(mm, 10);
-    const day = parseInt(dd, 10);
-    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-    return `${yyyy}-${mm}-${dd}`;
+    // Accept yyyy-mm-dd (ISO) or mm/dd/yyyy, trim spaces
+    const s = String(us).trim();
+    // ISO format
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+        const yyyy = m[1];
+        const mm = m[2];
+        const dd = m[3];
+        const month = parseInt(mm, 10);
+        const day = parseInt(dd, 10);
+        if (month >= 1 && month <= 12 && day >= 1 && day <= 31) return `${yyyy}-${mm}-${dd}`;
+        return null;
+    }
+    // US format mm/dd/yyyy or m/d/yyyy
+    m = s.match(/^([0-1]?\d)\/([0-3]?\d)\/(\d{4})$/);
+    if (m) {
+        const mm = m[1].padStart(2, '0');
+        const dd = m[2].padStart(2, '0');
+        const yyyy = m[3];
+        const month = parseInt(mm, 10);
+        const day = parseInt(dd, 10);
+        if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+        return `${yyyy}-${mm}-${dd}`;
+    }
+    return null;
 }
 
 window.onload = function() {
