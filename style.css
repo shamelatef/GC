@@ -1122,3 +1122,51 @@ body {
 .input-hint.show {
     display: block;
 }
+
+/* Color palette (Word-like) */
+.color-palette {
+    display: grid;
+    gap: 12px;
+}
+.palette-title {
+    font-size: 0.85rem;
+    color: #475569;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+.swatches {
+    display: grid;
+    grid-template-columns: repeat(10, 24px);
+    gap: 8px;
+}
+.swatch {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    background: var(--c, #ffffff);
+    cursor: pointer;
+    padding: 0;
+    outline: none;
+}
+.swatch:hover {
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+.swatch.selected {
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.35);
+    border-color: #667eea;
+}
+.palette-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* Small color preview chip used next to hidden color inputs */
+.color-preview-chip {
+    width: 36px;
+    height: 20px;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    background: #667eea;
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,0.5);
+}

@@ -1095,6 +1095,141 @@ function updateTaskDates(taskId, start, end) {
 // Task/Group Color Modal Logic
 let currentColorModalTaskId = null;
 let currentColorModalGroupName = null;
+let currentColorModalMode = null; // 'task' | 'group' | 'groupTasks'
+let currentColorModalTargetInputId = null; // when mode==='input'
+
+// Color palette (Word-like) support
+let recentColors = [];
+let colorPaletteBound = false;
+
+function loadRecentColors() {
+    try {
+        const raw = localStorage.getItem('gantt_recent_colors');
+        recentColors = Array.isArray(JSON.parse(raw)) ? JSON.parse(raw) : [];
+    } catch (_) { recentColors = []; }
+}
+
+function saveRecentColors() {
+    try { localStorage.setItem('gantt_recent_colors', JSON.stringify(recentColors.slice(0, 10))); } catch (_) {}
+}
+
+function renderRecentColors() {
+    const wrap = document.getElementById('recentColors');
+    const section = document.getElementById('recentSection');
+    if (!wrap || !section) return;
+    wrap.innerHTML = '';
+    const colors = (recentColors || []).slice(0, 10);
+    section.style.display = colors.length ? '' : 'none';
+    colors.forEach(hex => {
+        const btn = document.createElement('button');
+        btn.className = 'swatch';
+        btn.setAttribute('data-color', hex);
+        btn.style.setProperty('--c', hex);
+        btn.type = 'button';
+        btn.title = hex;
+        btn.addEventListener('click', () => selectPaletteColor(hex));
+        wrap.appendChild(btn);
+    });
+}
+
+function normalizeHex(hex) {
+    if (!hex) return '';
+    let v = String(hex).trim();
+    // expand #abc -> #aabbcc
+    if (/^#?[0-9a-fA-F]{3}$/.test(v)) {
+        v = v.replace('#', '');
+        v = '#' + v.split('').map(ch => ch + ch).join('').toUpperCase();
+        return v;
+    }
+    if (!v.startsWith('#')) v = '#' + v;
+    return v.toUpperCase();
+}
+
+function clearSwatchSelection() {
+    document.querySelectorAll('.swatch.selected').forEach(el => el.classList.remove('selected'));
+}
+
+function setSelectedColorInPalette(hex) {
+    const input = document.getElementById('colorInput');
+    const target = normalizeHex(hex || '#667EEA');
+    if (input) input.value = target;
+    clearSwatchSelection();
+    const match = document.querySelector(`.swatch[data-color="${target}"]`);
+    if (match) match.classList.add('selected');
+}
+
+function selectPaletteColor(hex) {
+    const value = normalizeHex(hex);
+    setSelectedColorInPalette(value);
+}
+
+function addToRecentColors(hex) {
+    const val = normalizeHex(hex);
+    if (!val) return;
+    recentColors = [val].concat((recentColors || []).filter(c => normalizeHex(c) !== val));
+    if (recentColors.length > 10) recentColors = recentColors.slice(0, 10);
+    saveRecentColors();
+    renderRecentColors();
+}
+
+function bindColorPaletteOnce() {
+    if (colorPaletteBound) return;
+    colorPaletteBound = true;
+    loadRecentColors();
+    renderRecentColors();
+    const palette = document.getElementById('colorPalette');
+    const moreBtn = document.getElementById('moreColorsBtn');
+    const input = document.getElementById('colorInput');
+    if (palette) {
+        palette.addEventListener('click', (e) => {
+            const btn = e.target.closest('.swatch');
+            if (!btn) return;
+            const hex = btn.getAttribute('data-color');
+            if (!hex) return;
+            selectPaletteColor(hex);
+        });
+    }
+    if (moreBtn && input) {
+        moreBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            try {
+                if (typeof input.showPicker === 'function') input.showPicker();
+                else input.click();
+            } catch (_) { try { input.click(); } catch (_) {} }
+        });
+        input.addEventListener('change', () => {
+            setSelectedColorInPalette(input.value);
+        });
+    }
+}
+
+// Ensure bindings after DOM is ready
+document.addEventListener('DOMContentLoaded', bindColorPaletteOnce);
+
+// Preview chip sync for hidden color inputs
+function updateColorPreview(inputId, previewId) {
+    const inputEl = document.getElementById(inputId);
+    const prevEl = document.getElementById(previewId);
+    if (inputEl && prevEl) {
+        const hex = normalizeHex(inputEl.value || '#667eea');
+        prevEl.style.background = hex;
+    }
+}
+
+function attachPreviewSync(inputId, previewId) {
+    const inputEl = document.getElementById(inputId);
+    if (!inputEl) return;
+    const handler = () => updateColorPreview(inputId, previewId);
+    inputEl.addEventListener('input', handler);
+    inputEl.addEventListener('change', handler);
+    // initialize once
+    handler();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    attachPreviewSync('taskColor', 'taskColorPreview');
+    attachPreviewSync('addTaskColor', 'addTaskColorPreview');
+});
 
 // Add Task Modal Logic
 let addTaskModalKeyHandlerBound = false;
@@ -1121,6 +1256,7 @@ function openAddTaskModal(groupName) {
     if (!endInput.value) endInput.value = isoTmr;
     const existingGroupColor = groups[groupName]?.color || '#667eea';
     colorInput.value = existingGroupColor;
+    updateColorPreview('addTaskColor', 'addTaskColorPreview');
 
     backdrop.style.display = 'flex';
     setTimeout(() => { nameInput.focus(); nameInput.select(); }, 0);
@@ -1213,38 +1349,112 @@ function confirmAddTaskModal() {
     showNotification('Task added successfully', 'success');
 }
 function openTaskColorModal(taskId) {
+    currentColorModalMode = 'task';
     currentColorModalTaskId = taskId;
     currentColorModalGroupName = null;
     const t = tasks.find(x => x.id === taskId);
     if (!t) return;
     const m = document.getElementById('colorModal');
     const input = document.getElementById('colorInput');
-    input.value = t.color || '#4caf50';
+    const title = document.getElementById('colorTitle');
+    if (title) title.textContent = 'Change Task Color';
+    bindColorPaletteOnce();
+    setSelectedColorInPalette(t.color || '#4caf50');
+    renderRecentColors();
     m.style.display = 'flex';
 }
 function openGroupColorModal(groupName) {
     if (!groupName || !groups[groupName]) return;
+    currentColorModalMode = 'group';
     currentColorModalTaskId = null;
     currentColorModalGroupName = groupName;
     const m = document.getElementById('colorModal');
     const input = document.getElementById('colorInput');
-    input.value = groups[groupName].color || '#667eea';
+    const title = document.getElementById('colorTitle');
+    if (title) title.textContent = 'Change Group Color';
+    bindColorPaletteOnce();
+    setSelectedColorInPalette(groups[groupName].color || '#667eea');
+    renderRecentColors();
     m.style.display = 'flex';
+}
+
+// Open color modal to change ALL tasks in a group (bulk apply)
+function openGroupTasksColorModal(groupName) {
+    if (!groupName || !groups[groupName]) return;
+    currentColorModalMode = 'groupTasks';
+    currentColorModalTaskId = null;
+    currentColorModalGroupName = groupName;
+    const m = document.getElementById('colorModal');
+    const input = document.getElementById('colorInput');
+    const title = document.getElementById('colorTitle');
+    if (title) title.textContent = 'Change All Tasks Colors';
+    // Prefer group color if set; fallback to first task color in group; else default
+    const groupColor = groups[groupName].color;
+    const firstTask = tasks.find(t => t.group === groupName);
+    bindColorPaletteOnce();
+    setSelectedColorInPalette(groupColor || (firstTask ? (firstTask.color || '#667eea') : '#667eea'));
+    renderRecentColors();
+    m.style.display = 'flex';
+}
+
+// Apply a color to all tasks within a group
+function applyColorToGroupTasks(groupName, color) {
+    if (!groupName) return;
+    let count = 0;
+    tasks.forEach(t => {
+        if (t.group === groupName) {
+            t.color = color;
+            count++;
+        }
+    });
+    markAsChanged();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    showNotification(`Updated ${count} task${count !== 1 ? 's' : ''} color${count !== 1 ? 's' : ''}`, 'success');
 }
 function closeColorModal() {
     const m = document.getElementById('colorModal');
     if (m) m.style.display = 'none';
     currentColorModalTaskId = null;
     currentColorModalGroupName = null;
+    currentColorModalMode = null;
+    currentColorModalTargetInputId = null;
 }
 function confirmColorModal() {
     const color = document.getElementById('colorInput').value;
-    if (currentColorModalTaskId != null) {
+    if (currentColorModalMode === 'task' && currentColorModalTaskId != null) {
         updateTaskColor(currentColorModalTaskId, color);
-    } else if (currentColorModalGroupName) {
+    } else if (currentColorModalMode === 'group' && currentColorModalGroupName) {
         updateGroupColor(currentColorModalGroupName, color);
+    } else if (currentColorModalMode === 'groupTasks' && currentColorModalGroupName) {
+        applyColorToGroupTasks(currentColorModalGroupName, color);
+    } else if (currentColorModalMode === 'input' && currentColorModalTargetInputId) {
+        const target = document.getElementById(currentColorModalTargetInputId);
+        if (target) {
+            target.value = color;
+            // trigger input event for any listeners
+            try { target.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+            try { target.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
+        }
     }
+    addToRecentColors(color);
     closeColorModal();
+}
+
+// Open color modal for an arbitrary color input field using the palette
+function openColorPickerForInput(inputId, titleText = 'Choose Color') {
+    const inputEl = document.getElementById(inputId);
+    if (!inputEl) return;
+    currentColorModalMode = 'input';
+    currentColorModalTargetInputId = inputId;
+    const m = document.getElementById('colorModal');
+    const title = document.getElementById('colorTitle');
+    if (title) title.textContent = titleText;
+    bindColorPaletteOnce();
+    setSelectedColorInPalette(inputEl.value || '#667eea');
+    renderRecentColors();
+    m.style.display = 'flex';
 }
 function updateTaskColor(taskId, color) {
     const t = tasks.find(x => x.id === taskId);
@@ -1955,7 +2165,11 @@ function createGroupChartHTML(months) {
                                 </div>
                                 <div class="kebab-item" onclick="openGroupColorModal('${safeGroupName}')">
                                     <span class="kebab-item-icon">🎨</span>
-                                    <span>Change Color</span>
+                                    <span>Change Group Color</span>
+                                </div>
+                                <div class="kebab-item" onclick="openGroupTasksColorModal('${safeGroupName}'); this.closest('.kebab-dropdown')?.classList.remove('show');">
+                                    <span class="kebab-item-icon">🌈</span>
+                                    <span>Change All Tasks Colors</span>
                                 </div>
                                 <div class="kebab-item danger" onclick="deleteGroup('${safeGroupName}')">
                                     <span class="kebab-item-icon">🗑️</span>
