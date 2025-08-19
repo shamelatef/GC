@@ -2362,9 +2362,194 @@ function daysBetween(a, b) {
 }
 
 function setupTaskResizeInteractions() {
-    // Dynamic task bar interactions are disabled per request.
-    // This function is intentionally a no-op.
-    return;
+    const chart = document.getElementById('ganttChart');
+    if (!chart) return;
+    const bars = chart.querySelectorAll('.task-bar');
+    if (!bars.length) return;
+
+    // Build the same months model used by rendering for accurate mapping
+    const months = getMonthRange(chartMinDate, chartMaxDate);
+    const totalMonths = Math.max(1, months.length);
+    const monthWidthPct = 100 / totalMonths;
+
+    let rafPending = false;
+    let lastClientX = 0;
+
+    const daysInMonth = (y, m) => new Date(y, m, 0).getDate();
+
+    // Position helpers (match createTaskRow math)
+    const posFromDate = (d, inclusiveEnd = false) => {
+        const y = d.getFullYear();
+        const m = d.getMonth() + 1;
+        const i = months.findIndex(mm => mm.year === y && mm.month === m);
+        const dim = daysInMonth(y, m);
+        const day = d.getDate();
+        const frac = (inclusiveEnd ? day : (day - 1)) / dim; // start uses day-1, end uses day
+        return i + frac; // fractional months from chartMin
+    };
+
+    const dateFromPos = (pos, inclusiveEnd = false) => {
+        let idx = Math.floor(pos);
+        let frac = pos - idx;
+        idx = Math.max(0, Math.min(totalMonths - 1, idx));
+        const ym = months[idx];
+        const dim = daysInMonth(ym.year, ym.month);
+        let day;
+        if (inclusiveEnd) {
+            day = Math.round(frac * dim);
+            day = Math.max(1, Math.min(dim, day));
+        } else {
+            day = Math.round(frac * dim) + 1;
+            day = Math.max(1, Math.min(dim, day));
+        }
+        return new Date(ym.year, ym.month - 1, day);
+    };
+
+    const computeLeftWidthPct = (startDate, endDate) => {
+        // replicate: left = startIndex*mw + startOffset; width = ((endIndex-startIndex)*mw)+endOffset-startOffset
+        const sy = startDate.getFullYear();
+        const sm = startDate.getMonth() + 1;
+        const ey = endDate.getFullYear();
+        const em = endDate.getMonth() + 1;
+        const sIdx = months.findIndex(m => m.year === sy && m.month === sm);
+        const eIdx = months.findIndex(m => m.year === ey && m.month === em);
+        const sDim = daysInMonth(sy, sm);
+        const eDim = daysInMonth(ey, em);
+        const sOff = ((startDate.getDate() - 1) / sDim) * monthWidthPct;
+        const eOff = ((endDate.getDate()) / eDim) * monthWidthPct; // inclusive end
+        const left = (sIdx * monthWidthPct) + sOff;
+        const width = ((eIdx - sIdx) * monthWidthPct) + eOff - sOff;
+        return { left, width };
+    };
+
+    const performUpdate = (clientX) => {
+        if (!taskDragState) return;
+        const { type, side, startX, pxPerMonth, startPosMonth, endPosMonth, barEl, taskName } = taskDragState;
+        const dx = clientX - startX;
+        const dMonths = dx / pxPerMonth; // fractional months delta
+
+        let newStartPos = startPosMonth;
+        let newEndPos = endPosMonth;
+
+        if (type === 'move') {
+            newStartPos = startPosMonth + dMonths;
+            newEndPos = endPosMonth + dMonths;
+        } else if (type === 'resize') {
+            if (side === 'left') newStartPos = startPosMonth + dMonths;
+            if (side === 'right') newEndPos = endPosMonth + dMonths;
+        }
+
+        // Clamp positions within chart
+        newStartPos = Math.max(0, Math.min(totalMonths - 1 + 0.9999, newStartPos));
+        newEndPos = Math.max(0, Math.min(totalMonths - 1 + 0.9999, newEndPos));
+
+        // Convert back to dates (inclusive end for end date)
+        let newStart = dateFromPos(newStartPos, false);
+        let newEnd = dateFromPos(newEndPos, true);
+
+        // Ensure order (no inversion)
+        if (newStart > newEnd) {
+            if (type === 'resize' && side === 'left') newStart = new Date(newEnd.getFullYear(), newEnd.getMonth(), newEnd.getDate());
+            else if (type === 'resize' && side === 'right') newEnd = new Date(newStart.getFullYear(), newStart.getMonth(), newStart.getDate());
+            else { // move case, keep duration
+                const dur = daysBetween(taskDragState.origStart, taskDragState.origEnd);
+                newEnd = addDays(newStart, dur);
+            }
+        }
+
+        // Live update bar position/width using month math
+        const { left, width } = computeLeftWidthPct(newStart, newEnd);
+        const leftPct = left;
+        const widthPct = width;
+        barEl.style.left = leftPct + '%';
+        barEl.style.width = widthPct + '%';
+        barEl.classList.add('resizing');
+        const durDays = Math.max(0, daysBetween(newStart, newEnd)) + 1;
+        const label = taskName || barEl.title.split('\n')[0].split(':')[0];
+        barEl.title = `${label}: ${formatDate(newStart)} - ${formatDate(newEnd)} (${durDays} day${durDays !== 1 ? 's' : ''})`;
+
+        taskDragState.previewStart = newStart;
+        taskDragState.previewEnd = newEnd;
+    };
+
+    const onMouseMove = (e) => {
+        if (!taskDragState) return;
+        lastClientX = e.clientX;
+        if (rafPending) return;
+        rafPending = true;
+        requestAnimationFrame(() => {
+            rafPending = false;
+            performUpdate(lastClientX);
+        });
+    };
+
+    const onMouseUp = () => {
+        if (!taskDragState) return;
+        const { taskId, barEl, previewStart, previewEnd, origStart, origEnd } = taskDragState;
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp, true);
+        barEl.classList.remove('resizing');
+        rafPending = false;
+
+        // Commit only if changed
+        const ps = previewStart || origStart;
+        const pe = previewEnd || origEnd;
+        if (dateToISO(ps) !== dateToISO(origStart) || dateToISO(pe) !== dateToISO(origEnd)) {
+            updateTaskDates(taskId, dateToISO(ps), dateToISO(pe));
+        }
+
+        taskDragState = null;
+    };
+
+    bars.forEach(bar => {
+        // Prevent native drag interfering
+        bar.setAttribute('draggable', 'false');
+        bar.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const handle = e.target.closest('.resize-handle');
+            const isHandle = !!handle;
+            const side = isHandle ? (handle.classList.contains('left') ? 'left' : 'right') : null;
+            const taskId = parseInt(bar.getAttribute('data-task-id'), 10);
+            if (!taskId) return;
+
+            const trackEl = bar.closest('.timeline-track');
+            if (!trackEl) return;
+            const rect = trackEl.getBoundingClientRect();
+            const pxPerMonth = rect.width / totalMonths;
+
+            const t = tasks.find(x => x.id === taskId);
+            if (!t) return;
+            const origStart = new Date(t.startDate);
+            const origEnd = new Date(t.endDate);
+            const startPosMonth = posFromDate(origStart, false);
+            const endPosMonth = posFromDate(origEnd, true);
+
+            taskDragState = {
+                type: isHandle ? 'resize' : 'move',
+                side,
+                taskId,
+                startX: e.clientX,
+                chartMin: chartMinDate,
+                chartMax: chartMaxDate,
+                pxPerMonth,
+                origStart,
+                origEnd,
+                startPosMonth,
+                endPosMonth,
+                barEl: bar,
+                trackEl,
+                taskName: t.name || ''
+            };
+
+            // Bind window listeners for drag lifecycle
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp, true);
+        });
+
+        // Also disable handle native drag
+        bar.querySelectorAll('.resize-handle').forEach(h => h.setAttribute('draggable','false'));
+    });
 }
 
 function createGroupChartHTML(months) {
@@ -2563,6 +2748,8 @@ function createTaskRow(task, months) {
                 <div class="task-bar" data-task-id="${task.id}"
                      style="left: ${left}%; width: ${width}%; background: linear-gradient(45deg, ${task.color}, ${adjustBrightness(task.color, -20)});"
                      title="${task.name}: ${formatDate(task.startDate)} - ${formatDate(task.endDate)} (${duration} day${duration !== 1 ? 's' : ''})">
+                    <div class="resize-handle left" aria-hidden="true"></div>
+                    <div class="resize-handle right" aria-hidden="true"></div>
                 </div>
             </div>
         </div>
