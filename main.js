@@ -1355,12 +1355,14 @@ function openTaskColorModal(taskId) {
     const t = tasks.find(x => x.id === taskId);
     if (!t) return;
     const m = document.getElementById('colorModal');
+    const modalEl = m ? m.querySelector('.modal') : null;
     const input = document.getElementById('colorInput');
     const title = document.getElementById('colorTitle');
     if (title) title.textContent = 'Change Task Color';
     bindColorPaletteOnce();
     setSelectedColorInPalette(t.color || '#4caf50');
     renderRecentColors();
+    if (modalEl) { modalEl.style.position=''; modalEl.style.left=''; modalEl.style.top=''; modalEl.style.transform=''; }
     m.style.display = 'flex';
 }
 function openGroupColorModal(groupName) {
@@ -1369,12 +1371,14 @@ function openGroupColorModal(groupName) {
     currentColorModalTaskId = null;
     currentColorModalGroupName = groupName;
     const m = document.getElementById('colorModal');
+    const modalEl = m ? m.querySelector('.modal') : null;
     const input = document.getElementById('colorInput');
     const title = document.getElementById('colorTitle');
     if (title) title.textContent = 'Change Group Color';
     bindColorPaletteOnce();
     setSelectedColorInPalette(groups[groupName].color || '#667eea');
     renderRecentColors();
+    if (modalEl) { modalEl.style.position=''; modalEl.style.left=''; modalEl.style.top=''; modalEl.style.transform=''; }
     m.style.display = 'flex';
 }
 
@@ -1385,6 +1389,7 @@ function openGroupTasksColorModal(groupName) {
     currentColorModalTaskId = null;
     currentColorModalGroupName = groupName;
     const m = document.getElementById('colorModal');
+    const modalEl = m ? m.querySelector('.modal') : null;
     const input = document.getElementById('colorInput');
     const title = document.getElementById('colorTitle');
     if (title) title.textContent = 'Change All Tasks Colors';
@@ -1394,6 +1399,7 @@ function openGroupTasksColorModal(groupName) {
     bindColorPaletteOnce();
     setSelectedColorInPalette(groupColor || (firstTask ? (firstTask.color || '#667eea') : '#667eea'));
     renderRecentColors();
+    if (modalEl) { modalEl.style.position=''; modalEl.style.left=''; modalEl.style.top=''; modalEl.style.transform=''; }
     m.style.display = 'flex';
 }
 
@@ -1443,18 +1449,58 @@ function confirmColorModal() {
 }
 
 // Open color modal for an arbitrary color input field using the palette
-function openColorPickerForInput(inputId, titleText = 'Choose Color') {
+function openColorPickerForInput(inputId, titleText = 'Choose Color', anchorEl = null) {
     const inputEl = document.getElementById(inputId);
     if (!inputEl) return;
     currentColorModalMode = 'input';
     currentColorModalTargetInputId = inputId;
     const m = document.getElementById('colorModal');
+    const modalEl = m ? m.querySelector('.modal') : null;
     const title = document.getElementById('colorTitle');
     if (title) title.textContent = titleText;
     bindColorPaletteOnce();
     setSelectedColorInPalette(inputEl.value || '#667eea');
     renderRecentColors();
-    m.style.display = 'flex';
+    if (m) {
+        m.style.display = 'flex';
+        // If anchor provided, position as popover near the anchor within viewport
+        if (anchorEl && modalEl) {
+            // Prepare for measurement
+            const prevPosition = modalEl.style.position;
+            const prevLeft = modalEl.style.left;
+            const prevTop = modalEl.style.top;
+            const prevTransform = modalEl.style.transform;
+            modalEl.style.position = 'fixed';
+            modalEl.style.left = '-9999px';
+            modalEl.style.top = '-9999px';
+            modalEl.style.transform = 'none';
+            // Next frame: measure and place
+            setTimeout(() => {
+                const rect = anchorEl.getBoundingClientRect();
+                const mw = modalEl.offsetWidth || 320;
+                const mh = modalEl.offsetHeight || 280;
+                const pad = 8;
+                let left = Math.min(window.innerWidth - mw - pad, Math.max(pad, rect.left));
+                let top = Math.min(window.innerHeight - mh - pad, Math.max(pad, rect.bottom + 6));
+                // If there's more space above than below, flip above the button
+                const spaceBelow = window.innerHeight - rect.bottom;
+                const spaceAbove = rect.top;
+                if (spaceAbove > spaceBelow && rect.top - mh - 6 > pad) {
+                    top = Math.max(pad, rect.top - mh - 6);
+                }
+                modalEl.style.left = left + 'px';
+                modalEl.style.top = top + 'px';
+                modalEl.style.position = 'fixed';
+                modalEl.style.transform = 'none';
+            }, 0);
+        } else if (modalEl) {
+            // Reset to centered modal when no anchor provided
+            modalEl.style.position = '';
+            modalEl.style.left = '';
+            modalEl.style.top = '';
+            modalEl.style.transform = '';
+        }
+    }
 }
 function updateTaskColor(taskId, color) {
     const t = tasks.find(x => x.id === taskId);
