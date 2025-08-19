@@ -15,6 +15,10 @@ let taskDragState = null; // { type: 'move'|'resize', side?: 'left'|'right', tas
 
 // Add Milestone Modal Logic
 let addMilestoneModalKeyHandlerBound = false;
+// Edit Milestone Modal Logic
+let editMilestoneId = null;
+let editMilestoneModalKeyHandlerBound = false;
+let milestoneClickBound = false;
 
 function openAddMilestoneModal() {
     const backdrop = document.getElementById('addMilestoneModal');
@@ -94,6 +98,98 @@ function renderMilestonesOverlay() {
             `;
         }).join('');
     return items;
+}
+
+// Click handling for milestones (open edit modal)
+function setupMilestoneInteractions() {
+    const chartContainer = document.getElementById('ganttChart');
+    if (!chartContainer) return;
+    if (milestoneClickBound) return;
+    chartContainer.addEventListener('click', (e) => {
+        const marker = e.target.closest('.milestone-marker');
+        if (!marker) return;
+        const idStr = marker.getAttribute('data-milestone-id');
+        const id = idStr ? parseInt(idStr, 10) : null;
+        if (id) openEditMilestoneModal(id);
+    });
+    milestoneClickBound = true;
+}
+
+// Open/Edit/Delete Milestone Modal handlers
+function openEditMilestoneModal(id) {
+    const backdrop = document.getElementById('editMilestoneModal');
+    const nameInput = document.getElementById('editMilestoneName');
+    const dateInput = document.getElementById('editMilestoneDate');
+    const m = milestones.find(mm => mm.id === id);
+    if (!backdrop || !nameInput || !dateInput || !m) return;
+    editMilestoneId = id;
+    nameInput.value = m.name || '';
+    // ensure date is yyyy-mm-dd
+    try {
+        const d = new Date(m.date);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        dateInput.value = `${yyyy}-${mm}-${dd}`;
+    } catch(_) { dateInput.value = m.date || ''; }
+    backdrop.style.display = 'flex';
+    setTimeout(() => { nameInput.focus(); nameInput.select(); }, 0);
+
+    // Backdrop click to close
+    backdrop.addEventListener('click', function(e){ if (e.target === backdrop) closeEditMilestoneModal(); });
+
+    // Keyboard shortcuts
+    if (!editMilestoneModalKeyHandlerBound) {
+        editMilestoneModalKeyHandlerBound = true;
+        backdrop.addEventListener('keydown', function(e){
+            if (backdrop.style.display === 'none') return;
+            if (e.key === 'Enter') { e.preventDefault(); confirmEditMilestoneModal(); }
+            if (e.key === 'Escape') { e.preventDefault(); closeEditMilestoneModal(); }
+        });
+    }
+}
+
+function closeEditMilestoneModal() {
+    const backdrop = document.getElementById('editMilestoneModal');
+    const nameInput = document.getElementById('editMilestoneName');
+    const dateInput = document.getElementById('editMilestoneDate');
+    if (!backdrop) return;
+    backdrop.style.display = 'none';
+    editMilestoneId = null;
+    if (nameInput) nameInput.value = '';
+    if (dateInput) dateInput.value = '';
+}
+
+function confirmEditMilestoneModal() {
+    if (editMilestoneId == null) return;
+    const nameInput = document.getElementById('editMilestoneName');
+    const dateInput = document.getElementById('editMilestoneDate');
+    if (!nameInput || !dateInput) return;
+    const name = (nameInput.value || '').trim();
+    const date = dateInput.value;
+    if (!name) { nameInput.classList.add('input-error'); nameInput.focus(); return; }
+    if (!date) { showNotification('Please choose a milestone date', 'error'); dateInput.focus(); return; }
+    const idx = milestones.findIndex(m => m.id === editMilestoneId);
+    if (idx === -1) return;
+    milestones[idx].name = name;
+    milestones[idx].date = date;
+    markAsChanged();
+    updateChart();
+    closeEditMilestoneModal();
+    showNotification('Milestone updated', 'success');
+}
+
+function confirmDeleteMilestone() {
+    if (editMilestoneId == null) return;
+    const m = milestones.find(mm => mm.id === editMilestoneId);
+    if (!m) { closeEditMilestoneModal(); return; }
+    if (!confirm(`Delete milestone "${m.name}"?`)) return;
+    milestones = milestones.filter(mm => mm.id !== editMilestoneId);
+    editMilestoneId = null;
+    markAsChanged();
+    updateChart();
+    closeEditMilestoneModal();
+    showNotification('Milestone deleted', 'success');
 }
 
 // Simple HTML escape for labels
@@ -2238,6 +2334,7 @@ function updateChart() {
     chartContainer.innerHTML = chartHTML;
     // Re-bind interactions after re-render
     setupTaskResizeInteractions();
+    setupMilestoneInteractions();
 }
 
 // Utilities for date math and mapping

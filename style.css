@@ -555,7 +555,7 @@ transform: rotate(-90deg);
 .milestones-overlay {
   position: absolute;
   inset: 0 0 0 0;
-  pointer-events: none;
+  pointer-events: none; /* disabled by default; enable only on markers */
   z-index: 4; /* above grid and bars, below menus */
 }
 
@@ -563,6 +563,7 @@ transform: rotate(-90deg);
   position: absolute;
   top: 0;
   bottom: 0;
+  pointer-events: auto; /* allow clicking */
 }
 
 .milestone-line {
@@ -591,6 +592,7 @@ transform: rotate(-90deg);
   font-size: 12px;
   font-weight: 700;
   max-width: 320px;
+  cursor: pointer;
 }
 
 /* High-contrast theme tweaks if needed */

@@ -39,6 +39,28 @@
             </div>
         </div>
 
+        <!-- Edit Milestone Modal -->
+        <div class="modal-backdrop" id="editMilestoneModal" style="display:none">
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editMilestoneTitle">
+                <h3 id="editMilestoneTitle">Edit Milestone</h3>
+                <div class="modal-body" style="display:grid; gap:12px;">
+                    <label style="display:grid; gap:6px;">
+                        <span>Milestone Name</span>
+                        <input type="text" id="editMilestoneName" placeholder="Enter milestone name" />
+                    </label>
+                    <label style="display:grid; gap:6px;">
+                        <span>Date</span>
+                        <input type="date" id="editMilestoneDate" />
+                    </label>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-secondary btn-secondary-ghost" onclick="closeEditMilestoneModal()">Cancel</button>
+                    <button class="btn btn-danger" onclick="confirmDeleteMilestone()" style="background:linear-gradient(45deg,#e74c3c,#c0392b); color:#fff;">Delete</button>
+                    <button class="btn btn-primary" onclick="confirmEditMilestoneModal()">Save</button>
+                </div>
+            </div>
+        </div>
+
         <div class="project-tabs" id="projectTabs"></div>
         
         <!-- Rename Project Modal -->
