@@ -2193,10 +2193,10 @@ function createGroupChartHTML(months) {
         
         return `
             <div class="chart-group" draggable="true" data-group="${safeGroupName}">
-                <div class="chart-group-header" onclick="if(event.detail === 1 && !event.target.closest('.kebab-menu')) toggleGroup('${safeGroupName}')">
+                <div class="chart-group-header ${isExpanded ? 'expanded' : 'collapsed'}" onclick="if(event.detail === 1 && !event.target.closest('.kebab-menu')) toggleGroup('${safeGroupName}')">
                     <div class="chart-group-label" ondblclick="event.stopPropagation(); openGroupEditModal('${safeGroupName}')" title="Double-click to rename group">
                         <span class="chart-group-toggle ${isExpanded ? '' : 'collapsed'}">▼</span>
-                        <span class="group-label-text">${groupName} (${groupTasks.length})</span>
+                        <span class="group-label-text" title="${groupName}">${groupName} (${groupTasks.length})</span>
                         <!-- Kebab menu for group actions (inside label to align with task kebab) -->
                         <div class="kebab-menu" onclick="event.stopPropagation()">
                             <div class="kebab-icon" onclick="event.stopPropagation(); toggleKebabMenu(this)">⋮</div>
