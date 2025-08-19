@@ -3,6 +3,7 @@ let tasks = [];
 let groups = {};
 let groupStates = {};
 let groupOrder = [];
+let milestones = [];
 let draggedElement = null;
 let draggedType = null;
 let hasUnsavedChanges = false;
@@ -11,6 +12,99 @@ let lastSavedData = null;
 let previousGroupInputs = new Set();
 // Drag/resize state for task bars
 let taskDragState = null; // { type: 'move'|'resize', side?: 'left'|'right', taskId, startX, chartMin, chartMax, pxPerDay, origStart, origEnd, barEl, trackEl, trackRect }
+
+// Add Milestone Modal Logic
+let addMilestoneModalKeyHandlerBound = false;
+
+function openAddMilestoneModal() {
+    const backdrop = document.getElementById('addMilestoneModal');
+    const nameInput = document.getElementById('addMilestoneName');
+    const dateInput = document.getElementById('addMilestoneDate');
+    if (!backdrop || !nameInput || !dateInput) return;
+    // default date to today if empty
+    if (!dateInput.value) {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        dateInput.value = `${yyyy}-${mm}-${dd}`;
+    }
+    backdrop.style.display = 'flex';
+    setTimeout(() => { nameInput.focus(); nameInput.select(); }, 0);
+    if (!addMilestoneModalKeyHandlerBound) {
+        addMilestoneModalKeyHandlerBound = true;
+        backdrop.addEventListener('keydown', function(e){
+            if (backdrop.style.display === 'none') return;
+            if (e.key === 'Enter') { e.preventDefault(); confirmAddMilestoneModal(); }
+            if (e.key === 'Escape') { e.preventDefault(); closeAddMilestoneModal(); }
+        });
+    }
+}
+
+function closeAddMilestoneModal() {
+    const backdrop = document.getElementById('addMilestoneModal');
+    const nameInput = document.getElementById('addMilestoneName');
+    const dateInput = document.getElementById('addMilestoneDate');
+    if (!backdrop) return;
+    backdrop.style.display = 'none';
+    if (nameInput) { nameInput.value = ''; nameInput.classList.remove('input-error'); }
+    if (dateInput) dateInput.value = '';
+}
+
+function confirmAddMilestoneModal() {
+    const nameInput = document.getElementById('addMilestoneName');
+    const dateInput = document.getElementById('addMilestoneDate');
+    if (!nameInput || !dateInput) return;
+    const name = (nameInput.value || '').trim();
+    const date = dateInput.value;
+    if (!name) {
+        nameInput.classList.add('input-error');
+        nameInput.focus();
+        return;
+    }
+    if (!date) {
+        showNotification('Please choose a milestone date', 'error');
+        dateInput.focus();
+        return;
+    }
+    const id = milestones.length ? Math.max(...milestones.map(m => m.id || 0)) + 1 : 1;
+    milestones.push({ id, name, date });
+    markAsChanged();
+    updateChart();
+    closeAddMilestoneModal();
+    showNotification('Milestone added', 'success');
+}
+
+// Render milestones as vertical lines with diamond labels across the chart body
+function renderMilestonesOverlay() {
+    if (!Array.isArray(milestones) || milestones.length === 0 || !chartMinDate || !chartMaxDate) return '';
+    const totalMs = (new Date(chartMaxDate).getTime() - new Date(chartMinDate).getTime()) || 1;
+    const items = milestones
+        .filter(m => m && m.date)
+        .map(m => {
+            const d = new Date(m.date).getTime();
+            const pct = Math.min(100, Math.max(0, ((d - new Date(chartMinDate).getTime()) / totalMs) * 100));
+            const title = `${m.name || 'Milestone'}: ${formatDate(m.date)}`;
+            const idAttr = m.id != null ? `data-milestone-id="${m.id}"` : '';
+            return `
+                <div class="milestone-marker" style="left:${pct}%" title="${title}" ${idAttr}>
+                    <div class="milestone-line"></div>
+                    <div class="milestone-badge">${escapeHtml(m.name || '')}</div>
+                </div>
+            `;
+        }).join('');
+    return items;
+}
+
+// Simple HTML escape for labels
+function escapeHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
 
 function updateGroupColor(groupName, color) {
     if (!groups[groupName]) return;
@@ -37,6 +131,7 @@ function makeEmptyProject(name = 'Project 1') {
     return {
         name,
         tasks: [],
+        milestones: [],
         groups: {},
         groupStates: {},
         groupOrder: []
@@ -46,6 +141,7 @@ function makeEmptyProject(name = 'Project 1') {
 function syncActiveFromGlobals() {
     if (!projects[activeProjectIndex]) return;
     projects[activeProjectIndex].tasks = JSON.parse(JSON.stringify(tasks));
+    projects[activeProjectIndex].milestones = JSON.parse(JSON.stringify(milestones));
     projects[activeProjectIndex].groups = JSON.parse(JSON.stringify(groups));
     projects[activeProjectIndex].groupStates = JSON.parse(JSON.stringify(groupStates));
     projects[activeProjectIndex].groupOrder = JSON.parse(JSON.stringify(groupOrder));
@@ -55,6 +151,7 @@ function syncGlobalsFromActive() {
     const p = projects[activeProjectIndex];
     if (!p) return;
     tasks = JSON.parse(JSON.stringify(p.tasks || []));
+    milestones = JSON.parse(JSON.stringify(p.milestones || []));
     groups = JSON.parse(JSON.stringify(p.groups || {}));
     groupStates = JSON.parse(JSON.stringify(p.groupStates || {}));
     groupOrder = JSON.parse(JSON.stringify(p.groupOrder || Object.keys(p.groups || {})));
@@ -280,7 +377,8 @@ document.addEventListener('keydown', (e) => {
         ['editModal', () => { try { closeEditModal(); } catch(_) {} }],
         ['colorModal', () => { try { closeColorModal(); } catch(_) {} }],
         ['addTaskModal', () => { try { closeAddTaskModal(); } catch(_) {} }],
-        ['renameModal', () => { try { closeRenameModal(); } catch(_) {} }]
+        ['renameModal', () => { try { closeRenameModal(); } catch(_) {} }],
+        ['addMilestoneModal', () => { try { closeAddMilestoneModal(); } catch(_) {} }]
     ];
     map.forEach(([id, closer]) => {
         const el = document.getElementById(id);
@@ -609,6 +707,7 @@ function loadDataFromObject(data, options = { mode: 'replaceAll' }) {
     const normalizeProject = (p) => ({
         name: p.name || 'Untitled',
         tasks: p.tasks || [],
+        milestones: p.milestones || [],
         groups: p.groups || {},
         groupStates: p.groupStates || {},
         groupOrder: p.groupOrder || Object.keys(p.groups || {})
@@ -2089,14 +2188,17 @@ function formatDate(dateString) {
 function updateChart() {
     const chartContainer = document.getElementById('ganttChart');
     
-    if (tasks.length === 0) {
-        chartContainer.innerHTML = '<div class="no-tasks">Add tasks to see your Gantt chart</div>';
+    // Determine overall chart bounds from tasks and milestones
+    const taskDates = tasks.flatMap(task => [new Date(task.startDate), new Date(task.endDate)]);
+    const milestoneDates = (milestones || []).filter(m => m && m.date).map(m => new Date(m.date));
+    const combined = taskDates.concat(milestoneDates);
+    if (combined.length === 0) {
+        chartContainer.innerHTML = '<div class="no-tasks">Add tasks or milestones to see your Gantt chart</div>';
         return;
     }
 
-    const allDates = tasks.flatMap(task => [new Date(task.startDate), new Date(task.endDate)]);
-    const minDate = new Date(Math.min(...allDates));
-    const maxDate = new Date(Math.max(...allDates));
+    const minDate = new Date(Math.min(...combined.map(d => +d)));
+    const maxDate = new Date(Math.max(...combined.map(d => +d)));
     // Expose for interactions
     chartMinDate = new Date(minDate.getFullYear(), minDate.getMonth(), minDate.getDate());
     chartMaxDate = new Date(maxDate.getFullYear(), maxDate.getMonth(), maxDate.getDate());
@@ -2128,6 +2230,7 @@ function updateChart() {
             </div>
         </div>
         <div class="chart-body">
+            <div class="milestones-overlay">${renderMilestonesOverlay()}</div>
             ${createGroupChartHTML(months)}
         </div>
     `;

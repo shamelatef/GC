@@ -544,10 +544,61 @@ body {
 }
 
 .chart-group-toggle.collapsed {
-    transform: rotate(-90deg);
+transform: rotate(-90deg);
 }
 
-/* Kebab menu styles */
+/* Milestones overlay */
+.chart-body {
+  position: relative;
+}
+
+.milestones-overlay {
+  position: absolute;
+  inset: 0 0 0 0;
+  pointer-events: none;
+  z-index: 4; /* above grid and bars, below menus */
+}
+
+.milestone-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.milestone-line {
+  position: absolute;
+  top: 24px; /* below header titles within chart-body */
+  bottom: 0;
+  left: 0;
+  width: 0;
+  border-left: 2px dotted rgba(98,114,164,0.6);
+}
+
+/* Rectangular milestone badge at the bottom, to the right of the line */
+.milestone-badge {
+  position: absolute;
+  bottom: -18px; /* place below the last task bar (outside chart body) */
+  left: 50%; /* centered under the line */
+  transform: translateX(-50%);
+  display: inline-block;
+  background: #1a614b; /* requested badge color */
+  color: #fff;
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+  padding: 6px 10px;
+  border-radius: 6px;
+  white-space: nowrap; /* auto-size horizontally to text */
+  font-size: 12px;
+  font-weight: 700;
+  max-width: 320px;
+}
+
+/* High-contrast theme tweaks if needed */
+@media (prefers-contrast: more) {
+  .milestone-line { border-left-color: rgba(60,60,60,0.9); border-left-style: dotted; }
+  .milestone-badge { background: #3a7bd5; }
+}
+
 .kebab-menu {
     position: relative;
     display: inline-block;

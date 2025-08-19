@@ -18,6 +18,27 @@
             <div id="saveIndicator" style="margin-top: 10px; font-size: 0.9rem; font-weight: 600;">✓ All changes saved</div>
         </div>
 
+        <!-- Add Milestone Modal -->
+        <div class="modal-backdrop" id="addMilestoneModal" style="display:none">
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addMilestoneTitle">
+                <h3 id="addMilestoneTitle">Add Milestone</h3>
+                <div class="modal-body" style="display:grid; gap:12px;">
+                    <label style="display:grid; gap:6px;">
+                        <span>Milestone Name</span>
+                        <input type="text" id="addMilestoneName" placeholder="Enter milestone name" />
+                    </label>
+                    <label style="display:grid; gap:6px;">
+                        <span>Date</span>
+                        <input type="date" id="addMilestoneDate" />
+                    </label>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-secondary btn-secondary-ghost" onclick="closeAddMilestoneModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="confirmAddMilestoneModal()">Add</button>
+                </div>
+            </div>
+        </div>
+
         <div class="project-tabs" id="projectTabs"></div>
         
         <!-- Rename Project Modal -->
@@ -196,6 +217,7 @@
                 <button class="btn btn-tertiary" onclick="toggleAllGroups()">Collapse All</button>
                 <button class="btn btn-success" onclick="saveToFile()">Save File</button>
                 <button class="btn btn-info" onclick="document.getElementById('fileInput').click()">Load File</button>
+                <button class="btn btn-secondary" onclick="openAddMilestoneModal()">Add Milestone</button>
 
                 <!-- Overflow menu for less-frequent actions -->
                 <div class="kebab-menu" style="margin-left:auto;">
