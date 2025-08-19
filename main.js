@@ -2363,7 +2363,6 @@ function createTaskRow(task, months) {
                 <div class="task-bar" data-task-id="${task.id}"
                      style="left: ${left}%; width: ${width}%; background: linear-gradient(45deg, ${task.color}, ${adjustBrightness(task.color, -20)});"
                      title="${task.name}: ${formatDate(task.startDate)} - ${formatDate(task.endDate)} (${duration} day${duration !== 1 ? 's' : ''})">
-                    <span class="label">${width > 15 ? task.name : ''}</span>
                 </div>
             </div>
         </div>
