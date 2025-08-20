@@ -2302,11 +2302,11 @@ function updateChart() {
     const months = getMonthRange(minDate, maxDate);
     const quarterGroups = groupMonthsByQuarters(months);
 
-    const quartersHTML = quarterGroups.map(quarter => {
+    const quartersHTML = quarterGroups.map(q => {
         return `
-            <div class="timeline-quarter" style="flex: ${quarter.months.length};">
-                <div class="quarter-year">${quarter.year}</div>
-                <div class="quarter-name">Q${quarter.quarter}</div>
+            <div class="timeline-quarter" style="flex: ${q.months.length};">
+                <div class="quarter-year">${q.fyLabel}</div>
+                <div class="quarter-name">Q${q.quarter}</div>
             </div>
         `;
     }).join('');
@@ -2773,28 +2773,45 @@ function getMonthRange(startDate, endDate) {
 }
 
 function groupMonthsByQuarters(months) {
-    const quarters = [];
-    let currentQuarter = null;
+    // Fiscal year starts in April.
+    // Q1: Apr-Jun, Q2: Jul-Sep, Q3: Oct-Dec, Q4: Jan-Mar
+    const buckets = new Map();
 
-    months.forEach(month => {
-        const quarter = Math.ceil(month.month / 3);
-        
-        if (!currentQuarter || 
-            currentQuarter.quarter !== quarter || 
-            currentQuarter.year !== month.year) {
-            
-            currentQuarter = {
-                year: month.year,
-                quarter: quarter,
+    const toFY = (y) => String(y).slice(-2).padStart(2, '0');
+
+    months.forEach(m => {
+        const calYear = m.year;
+        const calMonth = m.month; // 1..12
+        const isAfterMarch = calMonth >= 4; // Apr..Dec
+        const fyStartYear = isAfterMarch ? calYear : (calYear - 1);
+        const fyEndYear = fyStartYear + 1;
+        const fyLabel = `FY ${toFY(fyStartYear)}/${toFY(fyEndYear)}`;
+
+        let quarter;
+        if (calMonth >= 4 && calMonth <= 6) quarter = 1;      // Apr-Jun
+        else if (calMonth >= 7 && calMonth <= 9) quarter = 2; // Jul-Sep
+        else if (calMonth >= 10 && calMonth <= 12) quarter = 3; // Oct-Dec
+        else quarter = 4; // Jan-Mar
+
+        const key = `${fyStartYear}-Q${quarter}`;
+        if (!buckets.has(key)) {
+            buckets.set(key, {
+                fyStartYear,
+                fyEndYear,
+                fyLabel,
+                quarter,
                 months: []
-            };
-            quarters.push(currentQuarter);
+            });
         }
-        
-        currentQuarter.months.push(month);
+        buckets.get(key).months.push(m);
     });
 
-    return quarters;
+    // Sort buckets chronologically by fiscal start year, then quarter order 1..4
+    const result = Array.from(buckets.values()).sort((a, b) => {
+        if (a.fyStartYear !== b.fyStartYear) return a.fyStartYear - b.fyStartYear;
+        return a.quarter - b.quarter;
+    });
+    return result;
 }
 
 function getMonthShortName(monthNum) {
@@ -2830,29 +2847,39 @@ function saveChartAsPNG() {
         // Allow UI to apply styles
         requestAnimationFrame(() => {
             html2canvas(target, {
-                backgroundColor: null, // keep container/background as-is
+                backgroundColor: null,
                 scale: window.devicePixelRatio > 1 ? 2 : 2,
                 useCORS: true,
                 logging: false
             }).then(canvas => {
-                // Resize to fit PowerPoint-friendly width while preserving aspect ratio
-                const MAX_W = 1920;
-                let outCanvas = canvas;
-                if (canvas.width > MAX_W) {
-                    const ratio = MAX_W / canvas.width;
-                    const oc = document.createElement('canvas');
-                    oc.width = Math.round(canvas.width * ratio);
-                    oc.height = Math.round(canvas.height * ratio);
-                    const ctx = oc.getContext('2d');
-                    ctx.imageSmoothingEnabled = true;
-                    ctx.imageSmoothingQuality = 'high';
-                    ctx.drawImage(canvas, 0, 0, oc.width, oc.height);
-                    outCanvas = oc;
+                // Force exact 1920x1080 output with letterboxing (contain)
+                const OUT_W = 1920;
+                const OUT_H = 1080;
+                const oc = document.createElement('canvas');
+                oc.width = OUT_W;
+                oc.height = OUT_H;
+                const ctx = oc.getContext('2d');
+                // Fill background; fall back to white if computed is transparent
+                try {
+                    const bg = getComputedStyle(document.body).backgroundColor || '#ffffff';
+                    ctx.fillStyle = bg || '#ffffff';
+                } catch (_) {
+                    ctx.fillStyle = '#ffffff';
                 }
+                ctx.fillRect(0, 0, OUT_W, OUT_H);
+                // Scale to fit while preserving aspect ratio
+                const scale = Math.min(OUT_W / canvas.width, OUT_H / canvas.height);
+                const drawW = Math.max(1, Math.round(canvas.width * scale));
+                const drawH = Math.max(1, Math.round(canvas.height * scale));
+                const dx = Math.floor((OUT_W - drawW) / 2);
+                const dy = Math.floor((OUT_H - drawH) / 2);
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(canvas, dx, dy, drawW, drawH);
                 const link = document.createElement('a');
                 const ts = new Date().toISOString().replace(/[:.]/g, '-');
                 link.download = `gantt-chart-${ts}.png`;
-                link.href = outCanvas.toDataURL('image/png');
+                link.href = oc.toDataURL('image/png');
                 link.click();
                 showNotification('PNG exported', 'success');
             }).catch(err => {
@@ -2896,24 +2923,32 @@ function saveCollapsedChartAsPNG() {
                 useCORS: true,
                 logging: false
             }).then(canvas => {
-                // Resize to fit PowerPoint-friendly width while preserving aspect ratio
-                const MAX_W = 1920;
-                let outCanvas = canvas;
-                if (canvas.width > MAX_W) {
-                    const ratio = MAX_W / canvas.width;
-                    const oc = document.createElement('canvas');
-                    oc.width = Math.round(canvas.width * ratio);
-                    oc.height = Math.round(canvas.height * ratio);
-                    const ctx = oc.getContext('2d');
-                    ctx.imageSmoothingEnabled = true;
-                    ctx.imageSmoothingQuality = 'high';
-                    ctx.drawImage(canvas, 0, 0, oc.width, oc.height);
-                    outCanvas = oc;
+                // Force exact 1920x1080 output with letterboxing (contain)
+                const OUT_W = 1920;
+                const OUT_H = 1080;
+                const oc = document.createElement('canvas');
+                oc.width = OUT_W;
+                oc.height = OUT_H;
+                const ctx = oc.getContext('2d');
+                try {
+                    const bg = getComputedStyle(document.body).backgroundColor || '#ffffff';
+                    ctx.fillStyle = bg || '#ffffff';
+                } catch (_) {
+                    ctx.fillStyle = '#ffffff';
                 }
+                ctx.fillRect(0, 0, OUT_W, OUT_H);
+                const scale = Math.min(OUT_W / canvas.width, OUT_H / canvas.height);
+                const drawW = Math.max(1, Math.round(canvas.width * scale));
+                const drawH = Math.max(1, Math.round(canvas.height * scale));
+                const dx = Math.floor((OUT_W - drawW) / 2);
+                const dy = Math.floor((OUT_H - drawH) / 2);
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(canvas, dx, dy, drawW, drawH);
                 const link = document.createElement('a');
                 const ts = new Date().toISOString().replace(/[:.]/g, '-');
                 link.download = `gantt-chart-collapsed-${ts}.png`;
-                link.href = outCanvas.toDataURL('image/png');
+                link.href = oc.toDataURL('image/png');
                 link.click();
                 showNotification('Collapsed PNG exported', 'success');
             }).catch(err => {
