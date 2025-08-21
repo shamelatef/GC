@@ -12,6 +12,38 @@ let lastSavedData = null;
 let previousGroupInputs = new Set();
 // Drag/resize state for task bars
 let taskDragState = null; // { type: 'move'|'resize', side?: 'left'|'right', taskId, startX, chartMin, chartMax, pxPerDay, origStart, origEnd, barEl, trackEl, trackRect }
+
+// Prevent single-click toggle from firing when a double-click rename is intended
+const groupClickTimers = new Map();
+function onGroupHeaderClick(event, groupName) {
+    // Ignore clicks coming from kebab menu
+    if (event.target && event.target.closest && event.target.closest('.kebab-menu')) return;
+    if (event.detail === 1) {
+        // Debounce: wait briefly; if dblclick happens, this will be canceled
+        const existing = groupClickTimers.get(groupName);
+        if (existing) clearTimeout(existing);
+        const t = setTimeout(() => {
+            toggleGroup(groupName);
+            groupClickTimers.delete(groupName);
+        }, 220);
+        groupClickTimers.set(groupName, t);
+    } else if (event.detail > 1) {
+        const existing = groupClickTimers.get(groupName);
+        if (existing) {
+            clearTimeout(existing);
+            groupClickTimers.delete(groupName);
+        }
+    }
+}
+function onGroupLabelDblClick(event, groupName) {
+    if (event && event.stopPropagation) event.stopPropagation();
+    const existing = groupClickTimers.get(groupName);
+    if (existing) {
+        clearTimeout(existing);
+        groupClickTimers.delete(groupName);
+    }
+    openGroupEditModal(groupName);
+}
 function updateGroupStatus(groupName, status) {
     if (!groups[groupName]) return;
     groups[groupName].status = status;
@@ -2618,8 +2650,8 @@ function createGroupChartHTML(months) {
         
         return `
             <div class="chart-group" draggable="true" data-group="${safeGroupName}">
-                <div class="chart-group-header ${isExpanded ? 'expanded' : 'collapsed'}" onclick="if(event.detail === 1 && !event.target.closest('.kebab-menu')) toggleGroup('${safeGroupName}')">
-                    <div class="chart-group-label" ondblclick="event.stopPropagation(); openGroupEditModal('${safeGroupName}')" title="Double-click to rename group">
+                <div class="chart-group-header ${isExpanded ? 'expanded' : 'collapsed'}" onclick="onGroupHeaderClick(event, '${safeGroupName}')">
+                    <div class="chart-group-label" ondblclick="onGroupLabelDblClick(event, '${safeGroupName}')" title="Double-click to rename group">
                         <span class="chart-group-toggle ${isExpanded ? '' : 'collapsed'}">▼</span>
                         <span class="group-label-text" title="${groupName}">${groupName} (${groupTasks.length})</span>
                         <!-- Kebab menu for group actions (inside label to align with task kebab) -->

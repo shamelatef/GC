@@ -11,6 +11,169 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Global modals mounted at body level to avoid being affected by container filters/scroll -->
+    <!-- Add Milestone Modal -->
+    <div class="modal-backdrop" id="addMilestoneModal" style="display:none">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addMilestoneTitle">
+            <h3 id="addMilestoneTitle">Add Milestone</h3>
+            <div class="modal-body" style="display:grid; gap:12px;">
+                <label style="display:grid; gap:6px;">
+                    <span>Milestone Name</span>
+                    <input type="text" id="addMilestoneName" placeholder="Enter milestone name" />
+                </label>
+                <label style="display:grid; gap:6px;">
+                    <span>Date</span>
+                    <input type="date" id="addMilestoneDate" />
+                </label>
+            </div>
+            <div class="actions">
+                <button class="btn btn-secondary btn-secondary-ghost" onclick="closeAddMilestoneModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmAddMilestoneModal()">Add</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Milestone Modal -->
+    <div class="modal-backdrop" id="editMilestoneModal" style="display:none">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editMilestoneTitle">
+            <h3 id="editMilestoneTitle">Edit Milestone</h3>
+            <div class="modal-body" style="display:grid; gap:12px;">
+                <label style="display:grid; gap:6px;">
+                    <span>Milestone Name</span>
+                    <input type="text" id="editMilestoneName" placeholder="Enter milestone name" />
+                </label>
+                <label style="display:grid; gap:6px;">
+                    <span>Date</span>
+                    <input type="date" id="editMilestoneDate" />
+                </label>
+            </div>
+            <div class="actions">
+                <button class="btn btn-secondary btn-secondary-ghost" onclick="closeEditMilestoneModal()">Cancel</button>
+                <button class="btn btn-danger" onclick="confirmDeleteMilestone()" style="background:linear-gradient(45deg,#e74c3c,#c0392b); color:#fff;">Delete</button>
+                <button class="btn btn-primary" onclick="confirmEditMilestoneModal()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Project Modal -->
+    <div class="modal-backdrop" id="renameModal">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="renameTitle">
+            <h3 id="renameTitle">Rename Project</h3>
+            <div class="modal-body">
+                <input type="text" id="renameProjectInput" placeholder="Project name" />
+            </div>
+            <div class="actions">
+                <button class="btn btn-secondary btn-secondary-ghost" onclick="closeRenameModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmRenameModal()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal (for task/group edits) -->
+    <div class="modal-backdrop" id="editModal" style="display: none;">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+            <h3 id="editTitle">Edit</h3>
+            <div class="modal-body">
+                <input type="text" id="editInput" placeholder="Enter value" />
+            </div>
+            <div class="actions">
+                <button class="btn btn-secondary btn-secondary-ghost" onclick="closeEditModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmEditModal()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Dates Modal -->
+    <div class="modal-backdrop" id="dateModal" style="display:none">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dateTitle">
+            <h3 id="dateTitle">Edit Task Dates</h3>
+            <div class="modal-body" style="display:grid; gap:12px;">
+                <label style="display:grid; gap:6px;">
+                    <span>Start Date</span>
+                    <input type="date" id="dateStartInput" />
+                </label>
+                <label style="display:grid; gap:6px;">
+                    <span>End Date</span>
+                    <input type="date" id="dateEndInput" />
+                </label>
+            </div>
+            <div class="actions">
+                <button class="btn btn-secondary btn-secondary-ghost" onclick="closeDateModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmDateModal()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Color Modal -->
+    <div class="modal-backdrop" id="colorModal" style="display:none">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="colorTitle">
+            <h3 id="colorTitle">Change Task Color</h3>
+            <div class="modal-body" style="display:grid; gap:12px;">
+                <div class="color-palette" id="colorPalette">
+                    <div class="palette-section">
+                        <div class="palette-title">Status Colors</div>
+                        <div class="swatches">
+                            <button class="swatch" data-color="#808080" style="--c:#808080" aria-label="Grey – Not Started"></button>
+                            <button class="swatch" data-color="#4C9141" style="--c:#4C9141" aria-label="May Green – In Progress"></button>
+                            <button class="swatch" data-color="#FFA500" style="--c:#FFA500" aria-label="Orange – Delayed"></button>
+                            <button class="swatch" data-color="#CC0000" style="--c:#CC0000" aria-label="Stafron Red – Blocked"></button>
+                            <button class="swatch" data-color="#4A0072" style="--c:#4A0072" aria-label="Purple – Action needed"></button>
+                            <button class="swatch" data-color="#00B4D8" style="--c:#00B4D8" aria-label="Blue – Completed"></button>
+                        </div>
+                    </div>
+                </div>
+                <input type="color" id="colorInput" style="display:none" />
+            </div>
+            <div class="actions">
+                <button class="btn btn-secondary btn-secondary-ghost" onclick="closeColorModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmColorModal()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Task Modal -->
+    <div class="modal-backdrop" id="addTaskModal" style="display:none">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addTaskTitle">
+            <h3 id="addTaskTitle">Add Task</h3>
+            <div class="modal-body" style="display:grid; gap:12px;">
+                <label style="display:grid; gap:6px;">
+                    <span>Task Name</span>
+                    <input type="text" id="addTaskNameInput" placeholder="Enter task name" />
+                </label>
+                <label style="display:grid; gap:6px;">
+                    <span>Group</span>
+                    <input type="text" id="addTaskGroupName" readonly />
+                </label>
+                <label style="display:grid; gap:6px;">
+                    <span>Start Date</span>
+                    <input type="date" id="addTaskStartDate" />
+                </label>
+                <label style="display:grid; gap:6px;">
+                    <span>End Date</span>
+                    <input type="date" id="addTaskEndDate" />
+                </label>
+                <label style="display:grid; gap:6px;">
+                    <span>Status</span>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <select id="addTaskStatus">
+                            <option value="Not Started">Not Started</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Delayed">Delayed</option>
+                            <option value="Blocked">Blocked</option>
+                            <option value="Action Needed">Action Needed</option>
+                            <option value="Completed">Completed</option>
+                        </select>
+                        <div id="addTaskStatusChip" class="color-preview-chip" title="Status color"></div>
+                    </div>
+                </label>
+            </div>
+            <div class="actions">
+                <button class="btn btn-secondary btn-secondary-ghost" onclick="closeAddTaskModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmAddTaskModal()">Add</button>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <div class="header">
             <h1>Dynamic Gantt Chart - Infrastructure</h1>
@@ -18,171 +181,8 @@
             <div id="saveIndicator" style="margin-top: 10px; font-size: 0.9rem; font-weight: 600;">✓ All changes saved</div>
         </div>
 
-        <!-- Add Milestone Modal -->
-        <div class="modal-backdrop" id="addMilestoneModal" style="display:none">
-            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addMilestoneTitle">
-                <h3 id="addMilestoneTitle">Add Milestone</h3>
-                <div class="modal-body" style="display:grid; gap:12px;">
-                    <label style="display:grid; gap:6px;">
-                        <span>Milestone Name</span>
-                        <input type="text" id="addMilestoneName" placeholder="Enter milestone name" />
-                    </label>
-                    <label style="display:grid; gap:6px;">
-                        <span>Date</span>
-                        <input type="date" id="addMilestoneDate" />
-                    </label>
-                </div>
-                <div class="actions">
-                    <button class="btn btn-secondary btn-secondary-ghost" onclick="closeAddMilestoneModal()">Cancel</button>
-                    <button class="btn btn-primary" onclick="confirmAddMilestoneModal()">Add</button>
-                </div>
-            </div>
-        </div>
-
-
-        <!-- Edit Milestone Modal -->
-        <div class="modal-backdrop" id="editMilestoneModal" style="display:none">
-            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editMilestoneTitle">
-                <h3 id="editMilestoneTitle">Edit Milestone</h3>
-                <div class="modal-body" style="display:grid; gap:12px;">
-                    <label style="display:grid; gap:6px;">
-                        <span>Milestone Name</span>
-                        <input type="text" id="editMilestoneName" placeholder="Enter milestone name" />
-                    </label>
-                    <label style="display:grid; gap:6px;">
-                        <span>Date</span>
-                        <input type="date" id="editMilestoneDate" />
-                    </label>
-                </div>
-                <div class="actions">
-                    <button class="btn btn-secondary btn-secondary-ghost" onclick="closeEditMilestoneModal()">Cancel</button>
-                    <button class="btn btn-danger" onclick="confirmDeleteMilestone()" style="background:linear-gradient(45deg,#e74c3c,#c0392b); color:#fff;">Delete</button>
-                    <button class="btn btn-primary" onclick="confirmEditMilestoneModal()">Save</button>
-                </div>
-            </div>
-        </div>
-
         <div class="project-tabs" id="projectTabs"></div>
         
-        <!-- Rename Project Modal -->
-        <div class="modal-backdrop" id="renameModal">
-            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="renameTitle">
-                <h3 id="renameTitle">Rename Project</h3>
-                <div class="modal-body">
-                    <input type="text" id="renameProjectInput" placeholder="Project name" />
-                </div>
-                <div class="actions">
-                    <button class="btn btn-secondary btn-secondary-ghost" onclick="closeRenameModal()">Cancel</button>
-                    <button class="btn btn-primary" onclick="confirmRenameModal()">Save</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Edit Modal (for task/group edits) -->
-        <div class="modal-backdrop" id="editModal" style="display: none;">
-            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editTitle">
-                <h3 id="editTitle">Edit</h3>
-                <div class="modal-body">
-                    <input type="text" id="editInput" placeholder="Enter value" />
-                </div>
-                <div class="actions">
-                    <button class="btn btn-secondary btn-secondary-ghost" onclick="closeEditModal()">Cancel</button>
-                    <button class="btn btn-primary" onclick="confirmEditModal()">Save</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Edit Dates Modal -->
-        <div class="modal-backdrop" id="dateModal" style="display:none">
-            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dateTitle">
-                <h3 id="dateTitle">Edit Task Dates</h3>
-                <div class="modal-body" style="display:grid; gap:12px;">
-                    <label style="display:grid; gap:6px;">
-                        <span>Start Date</span>
-                        <input type="date" id="dateStartInput" />
-                    </label>
-                    <label style="display:grid; gap:6px;">
-                        <span>End Date</span>
-                        <input type="date" id="dateEndInput" />
-                    </label>
-                </div>
-                <div class="actions">
-                    <button class="btn btn-secondary btn-secondary-ghost" onclick="closeDateModal()">Cancel</button>
-                    <button class="btn btn-primary" onclick="confirmDateModal()">Save</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Edit Color Modal -->
-        <div class="modal-backdrop" id="colorModal" style="display:none">
-            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="colorTitle">
-                <h3 id="colorTitle">Change Task Color</h3>
-                <div class="modal-body" style="display:grid; gap:12px;">
-                    <div class="color-palette" id="colorPalette">
-                        <div class="palette-section">
-                            <div class="palette-title">Status Colors</div>
-                            <div class="swatches">
-                                <button class="swatch" data-color="#808080" style="--c:#808080" aria-label="Grey – Not Started"></button>
-                                <button class="swatch" data-color="#4C9141" style="--c:#4C9141" aria-label="May Green – In Progress"></button>
-                                <button class="swatch" data-color="#FFA500" style="--c:#FFA500" aria-label="Orange – Delayed"></button>
-                                <button class="swatch" data-color="#CC0000" style="--c:#CC0000" aria-label="Stafron Red – Blocked"></button>
-                                <button class="swatch" data-color="#4A0072" style="--c:#4A0072" aria-label="Purple – Action needed"></button>
-                                <button class="swatch" data-color="#00B4D8" style="--c:#00B4D8" aria-label="Blue – Completed"></button>
-                            </div>
-                        </div>
-                    </div>
-                    <input type="color" id="colorInput" style="display:none" />
-                </div>
-                <div class="actions">
-                    <button class="btn btn-secondary btn-secondary-ghost" onclick="closeColorModal()">Cancel</button>
-                    <button class="btn btn-primary" onclick="confirmColorModal()">Save</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Add Task Modal -->
-        <div class="modal-backdrop" id="addTaskModal" style="display:none">
-            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addTaskTitle">
-                <h3 id="addTaskTitle">Add Task</h3>
-                <div class="modal-body" style="display:grid; gap:12px;">
-                    <label style="display:grid; gap:6px;">
-                        <span>Task Name</span>
-                        <input type="text" id="addTaskNameInput" placeholder="Enter task name" />
-                    </label>
-                    <label style="display:grid; gap:6px;">
-                        <span>Group</span>
-                        <input type="text" id="addTaskGroupName" readonly />
-                    </label>
-                    <label style="display:grid; gap:6px;">
-                        <span>Start Date</span>
-                        <input type="date" id="addTaskStartDate" />
-                    </label>
-                    <label style="display:grid; gap:6px;">
-                        <span>End Date</span>
-                        <input type="date" id="addTaskEndDate" />
-                    </label>
-                    <label style="display:grid; gap:6px;">
-                        <span>Status</span>
-                        <div style="display:flex; gap:8px; align-items:center;">
-                            <select id="addTaskStatus">
-                                <option value="Not Started">Not Started</option>
-                                <option value="In Progress">In Progress</option>
-                                <option value="Delayed">Delayed</option>
-                                <option value="Blocked">Blocked</option>
-                                <option value="Action Needed">Action Needed</option>
-                                <option value="Completed">Completed</option>
-                            </select>
-                            <div id="addTaskStatusChip" class="color-preview-chip" title="Status color"></div>
-                        </div>
-                    </label>
-                </div>
-                <div class="actions">
-                    <button class="btn btn-secondary btn-secondary-ghost" onclick="closeAddTaskModal()">Cancel</button>
-                    <button class="btn btn-primary" onclick="confirmAddTaskModal()">Add</button>
-                </div>
-            </div>
-        </div>
-
         <div class="controls">
             <div class="form-group">
                 <label for="taskName">Task Name</label>
