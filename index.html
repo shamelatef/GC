@@ -119,44 +119,16 @@
                 <div class="modal-body" style="display:grid; gap:12px;">
                     <div class="color-palette" id="colorPalette">
                         <div class="palette-section">
-                            <div class="palette-title">Theme Colors</div>
+                            <div class="palette-title">Status Colors</div>
                             <div class="swatches">
-                                <button class="swatch" data-color="#000000" style="--c:#000000" aria-label="Black"></button>
-                                <button class="swatch" data-color="#7F7F7F" style="--c:#7F7F7F" aria-label="Dark Gray"></button>
-                                <button class="swatch" data-color="#C00000" style="--c:#C00000" aria-label="Dark Red"></button>
-                                <button class="swatch" data-color="#FF0000" style="--c:#FF0000" aria-label="Red"></button>
-                                <button class="swatch" data-color="#FFC000" style="--c:#FFC000" aria-label="Orange"></button>
-                                <button class="swatch" data-color="#FFFF00" style="--c:#FFFF00" aria-label="Yellow"></button>
-                                <button class="swatch" data-color="#92D050" style="--c:#92D050" aria-label="Green"></button>
-                                <button class="swatch" data-color="#00B050" style="--c:#00B050" aria-label="Dark Green"></button>
-                                <button class="swatch" data-color="#00B0F0" style="--c:#00B0F0" aria-label="Blue"></button>
-                                <button class="swatch" data-color="#0070C0" style="--c:#0070C0" aria-label="Dark Blue"></button>
-                                <button class="swatch" data-color="#002060" style="--c:#002060" aria-label="Navy"></button>
-                                <button class="swatch" data-color="#7030A0" style="--c:#7030A0" aria-label="Purple"></button>
+                                <button class="swatch" data-color="#808080" style="--c:#808080" aria-label="Grey – Not Started"></button>
+                                <button class="swatch" data-color="#4C9141" style="--c:#4C9141" aria-label="May Green – In Progress"></button>
+                                <button class="swatch" data-color="#FFA500" style="--c:#FFA500" aria-label="Orange – Delayed"></button>
+                                <button class="swatch" data-color="#CC0000" style="--c:#CC0000" aria-label="Stafron Red – Blocked"></button>
+                                <button class="swatch" data-color="#4A0072" style="--c:#4A0072" aria-label="Purple – Action needed"></button>
+                                <button class="swatch" data-color="#00B4D8" style="--c:#00B4D8" aria-label="Blue – Completed"></button>
                             </div>
                         </div>
-                        <div class="palette-section">
-                            <div class="palette-title">Standard Colors</div>
-                            <div class="swatches">
-                                <button class="swatch" data-color="#FFFFFF" style="--c:#FFFFFF" aria-label="White"></button>
-                                <button class="swatch" data-color="#E7E6E6" style="--c:#E7E6E6" aria-label="Light Gray"></button>
-                                <button class="swatch" data-color="#F2F2F2" style="--c:#F2F2F2" aria-label="Very Light Gray"></button>
-                                <button class="swatch" data-color="#1F497D" style="--c:#1F497D" aria-label="Dark Steel"></button>
-                                <button class="swatch" data-color="#4F81BD" style="--c:#4F81BD" aria-label="Steel Blue"></button>
-                                <button class="swatch" data-color="#9BBB59" style="--c:#9BBB59" aria-label="Olive Green"></button>
-                                <button class="swatch" data-color="#8064A2" style="--c:#8064A2" aria-label="Lavender"></button>
-                                <button class="swatch" data-color="#C0504D" style="--c:#C0504D" aria-label="Brick Red"></button>
-                                <button class="swatch" data-color="#4BACC6" style="--c:#4BACC6" aria-label="Teal"></button>
-                                <button class="swatch" data-color="#F79646" style="--c:#F79646" aria-label="Light Orange"></button>
-                            </div>
-                        </div>
-                        <div class="palette-section" id="recentSection" style="display:none;">
-                            <div class="palette-title">Recent Colors</div>
-                            <div class="swatches" id="recentColors"></div>
-                        </div>
-                    </div>
-                    <div class="palette-actions">
-                        <button class="btn btn-secondary btn-secondary-ghost" id="moreColorsBtn" type="button">More Colors…</button>
                     </div>
                     <input type="color" id="colorInput" style="display:none" />
                 </div>
@@ -189,11 +161,17 @@
                         <input type="date" id="addTaskEndDate" />
                     </label>
                     <label style="display:grid; gap:6px;">
-                        <span>Task Color</span>
+                        <span>Status</span>
                         <div style="display:flex; gap:8px; align-items:center;">
-                            <div id="addTaskColorPreview" class="color-preview-chip" title="Current color"></div>
-                            <input type="hidden" id="addTaskColor" value="#667eea" />
-                            <button type="button" class="btn btn-secondary btn-secondary-ghost" style="flex:0 0 auto; padding:6px 10px; border-radius:8px; font-size:0.8rem;" onclick="openColorPickerForInput('addTaskColor','Choose Task Color', this)">Palette</button>
+                            <select id="addTaskStatus">
+                                <option value="Not Started">Not Started</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="Delayed">Delayed</option>
+                                <option value="Blocked">Blocked</option>
+                                <option value="Action Needed">Action Needed</option>
+                                <option value="Completed">Completed</option>
+                            </select>
+                            <div id="addTaskStatusChip" class="color-preview-chip" title="Status color"></div>
                         </div>
                     </label>
                 </div>
@@ -227,13 +205,20 @@
                 <input type="date" id="endDate">
             </div>
             <div class="form-group">
-                <label for="taskColor">Task Color</label>
+                <label for="taskStatus">Status</label>
                 <div style="display:flex; gap:8px; align-items:center;">
-                    <div id="taskColorPreview" class="color-preview-chip" title="Current color"></div>
-                    <input type="hidden" id="taskColor" value="#667eea">
-                    <button type="button" class="btn btn-secondary btn-secondary-ghost" style="flex:0 0 auto; padding:6px 10px; border-radius:8px; font-size:0.8rem;" onclick="openColorPickerForInput('taskColor','Choose Task Color', this)">Palette</button>
+                    <select id="taskStatus">
+                        <option value="Not Started">Not Started</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Delayed">Delayed</option>
+                        <option value="Blocked">Blocked</option>
+                        <option value="Action Needed">Action Needed</option>
+                        <option value="Completed">Completed</option>
+                    </select>
+                    <div id="taskStatusChip" class="color-preview-chip" title="Status color"></div>
                 </div>
             </div>
+
             <div class="button-group">
                 <button class="btn btn-primary" onclick="addTask()">Add Task</button>
                 <button class="btn btn-tertiary" onclick="toggleAllGroups()">Collapse All</button>

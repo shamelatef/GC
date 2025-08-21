@@ -20,6 +20,27 @@ let editMilestoneId = null;
 let editMilestoneModalKeyHandlerBound = false;
 let milestoneClickBound = false;
 
+// Status to color mapping (six fixed statuses)
+const STATUS_COLORS = {
+    'Not Started': '#808080',
+    'In Progress': '#4C9141',
+    'Delayed': '#FFA500',
+    'Blocked': '#CC0000',
+    'Action Needed': '#4A0072',
+    'Completed': '#00B4D8'
+};
+
+function syncStatusSelection(selectId, chipId, colorInputId, previewId) {
+    const sel = document.getElementById(selectId);
+    const chip = document.getElementById(chipId);
+    if (!sel || !chip) return;
+    const hex = STATUS_COLORS[sel.value] || '#808080';
+    chip.style.background = hex;
+    const colorInput = colorInputId ? document.getElementById(colorInputId) : null;
+    if (colorInput) colorInput.value = hex;
+    try { if (colorInput && previewId) updateColorPreview(colorInputId, previewId); } catch (_) {}
+}
+
 function openAddMilestoneModal() {
     const backdrop = document.getElementById('addMilestoneModal');
     const nameInput = document.getElementById('addMilestoneName');
@@ -1406,7 +1427,7 @@ function updateColorPreview(inputId, previewId) {
     const inputEl = document.getElementById(inputId);
     const prevEl = document.getElementById(previewId);
     if (inputEl && prevEl) {
-        const hex = normalizeHex(inputEl.value || '#667eea');
+        const hex = normalizeHex(inputEl.value || '#808080');
         prevEl.style.background = hex;
     }
 }
@@ -1422,8 +1443,19 @@ function attachPreviewSync(inputId, previewId) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    attachPreviewSync('taskColor', 'taskColorPreview');
-    attachPreviewSync('addTaskColor', 'addTaskColorPreview');
+    // Bind status selects to auto-sync colors and chips
+    const taskStatus = document.getElementById('taskStatus');
+    if (taskStatus) {
+        taskStatus.addEventListener('change', () => syncStatusSelection('taskStatus','taskStatusChip','taskColor','taskColorPreview'));
+        // initialize once
+        syncStatusSelection('taskStatus','taskStatusChip','taskColor','taskColorPreview');
+    }
+    const addTaskStatus = document.getElementById('addTaskStatus');
+    if (addTaskStatus) {
+        addTaskStatus.addEventListener('change', () => syncStatusSelection('addTaskStatus','addTaskStatusChip','addTaskColor','addTaskColorPreview'));
+        // initialize once
+        syncStatusSelection('addTaskStatus','addTaskStatusChip','addTaskColor','addTaskColorPreview');
+    }
 });
 
 // Add Task Modal Logic
@@ -1434,12 +1466,15 @@ function openAddTaskModal(groupName) {
     const groupInput = document.getElementById('addTaskGroupName');
     const startInput = document.getElementById('addTaskStartDate');
     const endInput = document.getElementById('addTaskEndDate');
-    const colorInput = document.getElementById('addTaskColor');
+    const statusSelect = document.getElementById('addTaskStatus');
 
-    if (!backdrop || !nameInput || !groupInput || !startInput || !endInput || !colorInput) return;
+    if (!backdrop || !nameInput || !groupInput || !startInput || !endInput) return;
 
     // Prefill readonly group
     groupInput.value = groupName || '';
+    // Default status and sync color
+    if (statusSelect) statusSelect.value = 'Not Started';
+    syncStatusSelection('addTaskStatus','addTaskStatusChip');
     groupInput.readOnly = true;
 
     // Defaults: today/tomorrow and group color if exists
@@ -1449,9 +1484,7 @@ function openAddTaskModal(groupName) {
     const isoTmr = tmr.toISOString().split('T')[0];
     if (!startInput.value) startInput.value = isoToday;
     if (!endInput.value) endInput.value = isoTmr;
-    const existingGroupColor = groups[groupName]?.color || '#667eea';
-    colorInput.value = existingGroupColor;
-    updateColorPreview('addTaskColor', 'addTaskColorPreview');
+    // Color is derived from status now; no color input to prime
 
     backdrop.style.display = 'flex';
     setTimeout(() => { nameInput.focus(); nameInput.select(); }, 0);
@@ -1473,14 +1506,12 @@ function closeAddTaskModal() {
     const groupInput = document.getElementById('addTaskGroupName');
     const startInput = document.getElementById('addTaskStartDate');
     const endInput = document.getElementById('addTaskEndDate');
-    const colorInput = document.getElementById('addTaskColor');
     if (!backdrop) return;
     backdrop.style.display = 'none';
     if (nameInput) { nameInput.value = ''; nameInput.classList.remove('input-error'); }
     if (groupInput) groupInput.value = '';
     if (startInput) startInput.value = '';
     if (endInput) endInput.value = '';
-    if (colorInput) colorInput.value = '#667eea';
 }
 
 function confirmAddTaskModal() {
@@ -1488,15 +1519,16 @@ function confirmAddTaskModal() {
     const groupInput = document.getElementById('addTaskGroupName');
     const startInput = document.getElementById('addTaskStartDate');
     const endInput = document.getElementById('addTaskEndDate');
-    const colorInput = document.getElementById('addTaskColor');
+    const statusSelect = document.getElementById('addTaskStatus');
 
-    if (!nameInput || !groupInput || !startInput || !endInput || !colorInput) return;
+    if (!nameInput || !groupInput || !startInput || !endInput) return;
 
     const taskName = (nameInput.value || '').trim();
     const groupName = (groupInput.value || '').trim() || 'Ungrouped';
     const startDate = startInput.value;
     const endDate = endInput.value;
-    const taskColor = colorInput.value || '#667eea';
+    const taskStatus = statusSelect ? statusSelect.value : 'Not Started';
+    const taskColor = STATUS_COLORS[taskStatus] || '#808080';
 
     // Clear previous error state
     nameInput.classList.remove('input-error');
@@ -1521,7 +1553,8 @@ function confirmAddTaskModal() {
         group: groupName,
         startDate: startDate,
         endDate: endDate,
-        color: taskColor
+        color: taskColor,
+        status: taskStatus
     };
 
     tasks.push(task);
@@ -1555,7 +1588,7 @@ function openTaskColorModal(taskId) {
     const title = document.getElementById('colorTitle');
     if (title) title.textContent = 'Change Task Color';
     bindColorPaletteOnce();
-    setSelectedColorInPalette(t.color || '#4caf50');
+    setSelectedColorInPalette(t.color || '#808080');
     renderRecentColors();
     if (modalEl) { modalEl.style.position=''; modalEl.style.left=''; modalEl.style.top=''; modalEl.style.transform=''; }
     m.style.display = 'flex';
@@ -1571,7 +1604,7 @@ function openGroupColorModal(groupName) {
     const title = document.getElementById('colorTitle');
     if (title) title.textContent = 'Change Group Color';
     bindColorPaletteOnce();
-    setSelectedColorInPalette(groups[groupName].color || '#667eea');
+    setSelectedColorInPalette(groups[groupName].color || '#808080');
     renderRecentColors();
     if (modalEl) { modalEl.style.position=''; modalEl.style.left=''; modalEl.style.top=''; modalEl.style.transform=''; }
     m.style.display = 'flex';
@@ -1592,7 +1625,7 @@ function openGroupTasksColorModal(groupName) {
     const groupColor = groups[groupName].color;
     const firstTask = tasks.find(t => t.group === groupName);
     bindColorPaletteOnce();
-    setSelectedColorInPalette(groupColor || (firstTask ? (firstTask.color || '#667eea') : '#667eea'));
+    setSelectedColorInPalette(groupColor || (firstTask ? (firstTask.color || '#808080') : '#808080'));
     renderRecentColors();
     if (modalEl) { modalEl.style.position=''; modalEl.style.left=''; modalEl.style.top=''; modalEl.style.transform=''; }
     m.style.display = 'flex';
@@ -1654,7 +1687,7 @@ function openColorPickerForInput(inputId, titleText = 'Choose Color', anchorEl =
     const title = document.getElementById('colorTitle');
     if (title) title.textContent = titleText;
     bindColorPaletteOnce();
-    setSelectedColorInPalette(inputEl.value || '#667eea');
+    setSelectedColorInPalette(inputEl.value || '#808080');
     renderRecentColors();
     if (m) {
         m.style.display = 'flex';
@@ -1746,13 +1779,14 @@ function addTask() {
     const groupNameInput = document.getElementById('groupName');
     const startDateInput = document.getElementById('startDate');
     const endDateInput = document.getElementById('endDate');
-    const colorInput = document.getElementById('taskColor');
+    const statusSelect = document.getElementById('taskStatus');
 
     const taskName = taskNameInput.value.trim();
     const groupName = groupNameInput.value.trim() || 'Ungrouped';
     const startDate = startDateInput.value;
     const endDate = endDateInput.value;
-    const taskColor = colorInput.value;
+    const taskStatus = statusSelect ? statusSelect.value : 'Not Started';
+    const taskColor = STATUS_COLORS[taskStatus] || '#808080';
 
     // remove previous error highlight
     taskNameInput.classList.remove('input-error');
@@ -1778,7 +1812,8 @@ function addTask() {
         group: groupName,
         startDate: startDate,
         endDate: endDate,
-        color: taskColor
+        color: taskColor,
+        status: taskStatus
     };
 
     tasks.push(task);
@@ -1959,7 +1994,9 @@ function clearForm() {
     document.getElementById('groupName').value = '';
     setGroupGhost('');
     setTodayDate();
-    document.getElementById('taskColor').value = '#667eea';
+    const statusSel = document.getElementById('taskStatus');
+    if (statusSel) statusSel.value = 'Not Started';
+    syncStatusSelection('taskStatus','taskStatusChip');
 }
 
 function getAllGroupNames() {
@@ -2574,7 +2611,7 @@ function createGroupChartHTML(months) {
         ).join('') : '';
 
         const safeGroupName = groupName.replace(/'/g, "\\'");
-        const groupColor = groups[groupName]?.color || '#667eea';
+        const groupColor = groups[groupName]?.color || '#808080';
         
         return `
             <div class="chart-group" draggable="true" data-group="${safeGroupName}">
