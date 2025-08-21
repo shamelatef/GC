@@ -414,17 +414,16 @@ body {
     text-align: center;
     font-size: 0.85rem;
     color: #7f8c8d;
-    border-right: 2px solid #ecf0f1;
+    border-left: none; /* lines are drawn by header grid overlay */
     background: linear-gradient(to bottom, #f8f9fa, #e9ecef);
     min-width: 80px;
     display: flex;
     flex-direction: column;
     gap: 4px;
+    box-sizing: border-box; /* include border in width to keep lines aligned */
 }
 
-.timeline-quarter:last-child {
-    border-right: none;
-}
+.timeline-quarter:first-child { border-left: none; }
 
 .quarter-year {
     font-size: 0.9rem;
@@ -450,13 +449,19 @@ body {
     font-size: 0.75rem;
     color: #6c757d;
     background: linear-gradient(to bottom, #ffffff, #f8f9fa);
-    border-right: 1px solid #dee2e6;
+    border-left: none; /* lines are drawn by header grid overlay */
     min-width: 25px;
     font-weight: 500;
+    box-sizing: border-box; /* include border in width to prevent drift */
 }
 
-.month-cell:last-child {
-    border-right: none;
+.month-cell:first-child { border-left: none; }
+
+/* Ensure header rows use full width and align with body grid */
+.timeline-quarters,
+.timeline-months {
+    display: flex;
+    width: 100%;
 }
 
 .chart-body {
@@ -938,8 +943,19 @@ transform: rotate(-90deg);
     bottom: 0;
     width: 0;
 }
-.timeline-grid .vline { border-left: 1px solid rgba(0,0,0,0.06); }
-.timeline-grid .qline { border-left: 2px solid rgba(102,126,234,0.25); }
+.timeline-grid .vline { border-left: 1px solid rgba(0,0,0,0.06); } /* lighter month guides */
+.timeline-grid .qline { border-left: 2px solid rgba(102,126,234,0.25); } /* lighter quarter guides */
+
+/* Ensure header grid appears above header backgrounds */
+.timeline-grid.header-grid {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 2;
+}
 
 .task-bar {
     position: absolute;

@@ -2429,12 +2429,20 @@ function updateChart() {
         </div>
     `).join('');
 
+    // Build header grid lines to align exactly with body grid
+    const headerGridLines = months.slice(1).map((m, idx) => {
+        const pos = ((idx + 1) * 100 / months.length);
+        const isQuarter = (m.month === 4 || m.month === 7 || m.month === 10 || m.month === 1);
+        return `<div class="${isQuarter ? 'qline' : 'vline'}" style="left: ${pos}%"></div>`;
+    }).join('');
+
     const chartHTML = `
         <div class="chart-header">
             <div class="chart-title">Epics & Activities</div>
             <div class="timeline-container">
                 <div class="timeline-quarters">${quartersHTML}</div>
                 <div class="timeline-months">${monthsHTML}</div>
+                <div class="timeline-grid header-grid" aria-hidden="true">${headerGridLines}</div>
             </div>
         </div>
         <div class="chart-body">
