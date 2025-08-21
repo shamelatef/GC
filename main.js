@@ -12,6 +12,17 @@ let lastSavedData = null;
 let previousGroupInputs = new Set();
 // Drag/resize state for task bars
 let taskDragState = null; // { type: 'move'|'resize', side?: 'left'|'right', taskId, startX, chartMin, chartMax, pxPerDay, origStart, origEnd, barEl, trackEl, trackRect }
+function updateGroupStatus(groupName, status) {
+    if (!groups[groupName]) return;
+    groups[groupName].status = status;
+    // Derive group color from status to keep visual consistent
+    groups[groupName].color = STATUS_COLORS[status] || '#808080';
+    markAsChanged();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    showNotification(`Group "${groupName}" set to ${status}`, 'success');
+}
 
 // Add Milestone Modal Logic
 let addMilestoneModalKeyHandlerBound = false;
@@ -1576,22 +1587,16 @@ function confirmAddTaskModal() {
     closeAddTaskModal();
     showNotification('Task added successfully', 'success');
 }
-function openTaskColorModal(taskId) {
-    currentColorModalMode = 'task';
-    currentColorModalTaskId = taskId;
-    currentColorModalGroupName = null;
+function updateTaskStatus(taskId, status) {
     const t = tasks.find(x => x.id === taskId);
     if (!t) return;
-    const m = document.getElementById('colorModal');
-    const modalEl = m ? m.querySelector('.modal') : null;
-    const input = document.getElementById('colorInput');
-    const title = document.getElementById('colorTitle');
-    if (title) title.textContent = 'Change Task Color';
-    bindColorPaletteOnce();
-    setSelectedColorInPalette(t.color || '#808080');
-    renderRecentColors();
-    if (modalEl) { modalEl.style.position=''; modalEl.style.left=''; modalEl.style.top=''; modalEl.style.transform=''; }
-    m.style.display = 'flex';
+    t.status = status;
+    t.color = STATUS_COLORS[status] || '#808080';
+    markAsChanged();
+    updateGroupsList();
+    updateChart();
+    updateGroupSuggestions();
+    showNotification(`Status set to ${status}`, 'success');
 }
 function openGroupColorModal(groupName) {
     if (!groupName || !groups[groupName]) return;
@@ -1657,9 +1662,7 @@ function closeColorModal() {
 }
 function confirmColorModal() {
     const color = document.getElementById('colorInput').value;
-    if (currentColorModalMode === 'task' && currentColorModalTaskId != null) {
-        updateTaskColor(currentColorModalTaskId, color);
-    } else if (currentColorModalMode === 'group' && currentColorModalGroupName) {
+    if (currentColorModalMode === 'group' && currentColorModalGroupName) {
         updateGroupColor(currentColorModalGroupName, color);
     } else if (currentColorModalMode === 'groupTasks' && currentColorModalGroupName) {
         applyColorToGroupTasks(currentColorModalGroupName, color);
@@ -2631,13 +2634,17 @@ function createGroupChartHTML(months) {
                                     <span class="kebab-item-icon">➕</span>
                                     <span>Add Task</span>
                                 </div>
-                                <div class="kebab-item" onclick="openGroupColorModal('${safeGroupName}')">
-                                    <span class="kebab-item-icon">🎨</span>
-                                    <span>Change Group Color</span>
-                                </div>
-                                <div class="kebab-item" onclick="openGroupTasksColorModal('${safeGroupName}'); this.closest('.kebab-dropdown')?.classList.remove('show');">
-                                    <span class="kebab-item-icon">🌈</span>
-                                    <span>Change All Tasks Colors</span>
+                                <div class="kebab-item" onclick="event.stopPropagation()" style="display:flex; align-items:center; gap:8px;">
+                                    <span class="kebab-item-icon">✅</span>
+                                    <span style="min-width:120px;">Set Group Status</span>
+                                    <select onclick="event.stopPropagation()" onchange="updateGroupStatus('${safeGroupName}', this.value); this.closest('.kebab-dropdown')?.classList.remove('show');">
+                                        <option value="Not Started" ${ (groups[safeGroupName] && (groups[safeGroupName].status || 'Not Started') === 'Not Started') ? 'selected' : ''}>Not Started</option>
+                                        <option value="In Progress" ${ (groups[safeGroupName] && groups[safeGroupName].status === 'In Progress') ? 'selected' : ''}>In Progress</option>
+                                        <option value="Delayed" ${ (groups[safeGroupName] && groups[safeGroupName].status === 'Delayed') ? 'selected' : ''}>Delayed</option>
+                                        <option value="Blocked" ${ (groups[safeGroupName] && groups[safeGroupName].status === 'Blocked') ? 'selected' : ''}>Blocked</option>
+                                        <option value="Action Needed" ${ (groups[safeGroupName] && groups[safeGroupName].status === 'Action Needed') ? 'selected' : ''}>Action Needed</option>
+                                        <option value="Completed" ${ (groups[safeGroupName] && groups[safeGroupName].status === 'Completed') ? 'selected' : ''}>Completed</option>
+                                    </select>
                                 </div>
                                 <div class="kebab-item danger" onclick="deleteGroup('${safeGroupName}')">
                                     <span class="kebab-item-icon">🗑️</span>
@@ -2769,9 +2776,17 @@ function createTaskRow(task, months) {
                             <span class="kebab-item-icon">📅</span>
                             <span>Edit Dates…</span>
                         </div>
-                        <div class="kebab-item" onclick="openTaskColorModal(${task.id}); this.closest('.kebab-dropdown')?.classList.remove('show');">
-                            <span class="kebab-item-icon">🎨</span>
-                            <span>Change Color</span>
+                        <div class="kebab-item" onclick="event.stopPropagation()" style="display:flex; align-items:center; gap:8px;">
+                            <span class="kebab-item-icon">✅</span>
+                            <span style="min-width:110px;">Change Status…</span>
+                            <select onchange="updateTaskStatus(${task.id}, this.value); this.closest('.kebab-dropdown')?.classList.remove('show');" onclick="event.stopPropagation()">
+                                <option value="Not Started" ${task.status === 'Not Started' ? 'selected' : ''}>Not Started</option>
+                                <option value="In Progress" ${task.status === 'In Progress' ? 'selected' : ''}>In Progress</option>
+                                <option value="Delayed" ${task.status === 'Delayed' ? 'selected' : ''}>Delayed</option>
+                                <option value="Blocked" ${task.status === 'Blocked' ? 'selected' : ''}>Blocked</option>
+                                <option value="Action Needed" ${task.status === 'Action Needed' ? 'selected' : ''}>Action Needed</option>
+                                <option value="Completed" ${task.status === 'Completed' ? 'selected' : ''}>Completed</option>
+                            </select>
                         </div>
                         <div class="kebab-item danger" onclick="deleteTask(${task.id})">
                             <span class="kebab-item-icon">🗑️</span>
