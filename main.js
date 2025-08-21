@@ -173,12 +173,26 @@ function confirmAddMilestoneModal() {
 // Render milestones as vertical lines with diamond labels across the chart body
 function renderMilestonesOverlay() {
     if (!Array.isArray(milestones) || milestones.length === 0 || !chartMinDate || !chartMaxDate) return '';
-    const totalMs = (new Date(chartMaxDate).getTime() - new Date(chartMinDate).getTime()) || 1;
+    // Use the same month-based layout math as task/group bars so markers align perfectly
+    const months = getMonthRange(chartMinDate, chartMaxDate);
+    const totalMonths = Math.max(1, months.length);
+    const monthWidth = 100 / totalMonths;
+
     const items = milestones
-        .filter(m => m && m.date)
+        .filter(m => m && m.date && parseYMD(m.date))
         .map(m => {
-            const d = new Date(m.date).getTime();
-            const pct = Math.min(100, Math.max(0, ((d - new Date(chartMinDate).getTime()) / totalMs) * 100));
+            const dObj = parseYMD(m.date);
+            if (!dObj) return '';
+            const y = dObj.getFullYear();
+            const mIdx = dObj.getMonth() + 1; // 1..12
+            const day = dObj.getDate();
+            const monthIndex = months.findIndex(mm => mm.year === y && mm.month === mIdx);
+            if (monthIndex === -1) return '';
+            const daysInMonth = new Date(y, mIdx, 0).getDate();
+            // Position at the start of the chosen day (same convention as task bar starts)
+            const startOffset = ((day - 1) / daysInMonth) * monthWidth;
+            const left = (monthIndex * monthWidth) + startOffset;
+            const pct = Math.max(0, Math.min(100, left));
             const title = `${m.name || 'Milestone'}: ${formatDate(m.date)}`;
             const idAttr = m.id != null ? `data-milestone-id="${m.id}"` : '';
             return `
@@ -217,7 +231,7 @@ function openEditMilestoneModal(id) {
     nameInput.value = m.name || '';
     // ensure date is yyyy-mm-dd
     try {
-        const d = new Date(m.date);
+        const d = parseYMD(m.date) || new Date(m.date);
         const yyyy = d.getFullYear();
         const mm = String(d.getMonth() + 1).padStart(2, '0');
         const dd = String(d.getDate()).padStart(2, '0');
@@ -1829,7 +1843,11 @@ function triggerTaskNameAttention(duration = 1500) {
 }
 
 function setTodayDate() {
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const today = `${yyyy}-${mm}-${dd}`;
     const startDateInput = document.getElementById('startDate');
     const endDateInput = document.getElementById('endDate');
     
@@ -1837,9 +1855,11 @@ function setTodayDate() {
         startDateInput.value = today;
     }
     if (!endDateInput.value) {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        endDateInput.value = tomorrow.toISOString().split('T')[0];
+        const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+        const ty = tomorrow.getFullYear();
+        const tm = String(tomorrow.getMonth() + 1).padStart(2, '0');
+        const td = String(tomorrow.getDate()).padStart(2, '0');
+        endDateInput.value = `${ty}-${tm}-${td}`;
     }
 }
 
@@ -1963,11 +1983,11 @@ function updateTaskField(taskId, field, value) {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
-    if (field === 'startDate' && new Date(value) > new Date(task.endDate)) {
+    if (field === 'startDate' && (parseYMD(value) > parseYMD(task.endDate))) {
         showNotification('Start date cannot be after end date', 'error');
         return;
     }
-    if (field === 'endDate' && new Date(value) < new Date(task.startDate)) {
+    if (field === 'endDate' && (parseYMD(value) < parseYMD(task.startDate))) {
         showNotification('End date cannot be before start date', 'error');
         return;
     }
@@ -2384,8 +2404,21 @@ function reorderGroups(draggedGroupName, targetGroupName) {
     }
 }
 
+// Parse a date string, treating YYYY-MM-DD as a local date (to avoid UTC timezone shifts)
+function parseYMD(dateString) {
+    if (!dateString) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+        const [y, m, d] = dateString.split('-').map(Number);
+        const dt = new Date(y, (m || 1) - 1, d || 1);
+        return isNaN(dt) ? null : dt;
+    }
+    const d = new Date(dateString);
+    return isNaN(d) ? null : d;
+}
+
 function formatDate(dateString) {
-    const date = new Date(dateString);
+    const date = (dateString instanceof Date) ? dateString : parseYMD(dateString);
+    if (!date) return '';
     return date.toLocaleDateString('en-US', { 
         month: 'short', 
         day: 'numeric',
@@ -2397,8 +2430,13 @@ function updateChart() {
     const chartContainer = document.getElementById('ganttChart');
     
     // Determine overall chart bounds from tasks and milestones
-    const taskDates = tasks.flatMap(task => [new Date(task.startDate), new Date(task.endDate)]);
-    const milestoneDates = (milestones || []).filter(m => m && m.date).map(m => new Date(m.date));
+    const taskDates = tasks
+        .flatMap(task => [parseYMD(task.startDate), parseYMD(task.endDate)])
+        .filter(Boolean);
+    const milestoneDates = (milestones || [])
+        .filter(m => m && m.date && parseYMD(m.date))
+        .map(m => parseYMD(m.date))
+        .filter(Boolean);
     const combined = taskDates.concat(milestoneDates);
     if (combined.length === 0) {
         chartContainer.innerHTML = '<div class="no-tasks">Add tasks or milestones to see your Gantt chart</div>';
@@ -2819,7 +2857,9 @@ function createGroupChartHTML(months) {
         let groupEnd = null;
         
         if (groupTasks.length > 0) {
-            const groupDates = groupTasks.flatMap(task => [new Date(task.startDate), new Date(task.endDate)]);
+            const groupDates = groupTasks
+                .flatMap(task => [parseYMD(task.startDate), parseYMD(task.endDate)])
+                .filter(Boolean);
             groupStart = new Date(Math.min(...groupDates));
             groupEnd = new Date(Math.max(...groupDates));
         }
@@ -2937,8 +2977,8 @@ function createGroupBar(startDate, endDate, months, groupName) {
 }
 
 function createTaskRow(task, months) {
-    const taskStart = new Date(task.startDate);
-    const taskEnd = new Date(task.endDate);
+    const taskStart = parseYMD(task.startDate) || new Date(task.startDate);
+    const taskEnd = parseYMD(task.endDate) || new Date(task.endDate);
     
     const startMonth = {
         year: taskStart.getFullYear(),

@@ -7,6 +7,13 @@
     color: #64748b;
 }
 
+/* Responsive: when label column shrinks to 180px, match overlay offset */
+@media (max-width: 768px) {
+  .milestones-overlay {
+    left: 180px; /* keep in sync with .chart-row/.chart-header grid-template-columns */
+  }
+}
+
 /* Make group/task labels anchor dropdowns without creating a stacking context */
 .chart-group-label,
 .task-label {
@@ -559,7 +566,11 @@ transform: rotate(-90deg);
 
 .milestones-overlay {
   position: absolute;
-  inset: 0 0 0 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  /* Align overlay to the timeline column (exclude the left labels column) */
+  left: 220px; /* must match chart-row/chart-header left column width */
   pointer-events: none; /* disabled by default; enable only on markers */
   z-index: 4; /* above grid and bars, below menus */
 }
