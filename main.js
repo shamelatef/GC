@@ -1061,12 +1061,14 @@ function saveToFile() {
 function exportCSV() {
     // Use current globals for active project
     const rows = tasks.map(t => ({
-        Task_Name: t.name || '',
-        group_name: t.group || '',
-        start_date: t.startDate || '',
-        end_date: t.endDate || ''
+        epic: t.group || '',
+        activity: t.name || '',
+        start: t.startDate || '',
+        end: t.endDate || '',
+        status: t.status || 'Not Started'
     }));
-    const header = ['Task_Name','group_name','start_date','end_date'];
+    // New standard header order
+    const header = ['epic','activity','start','end','status'];
     const esc = v => '"' + String(v).replace(/"/g, '""') + '"';
     const lines = [header.join(',')].concat(rows.map(r => header.map(h => esc(r[h])).join(',')));
     const csv = lines.join('\n');
@@ -1226,24 +1228,32 @@ function processImportedRows(rows) {
     const headerMap = {};
     for (const k of keys) {
         const nk = norm(k);
+        // New preferred headers
+        if (!headerMap.task && (nk === 'activity')) headerMap.task = k;
+        if (!headerMap.group && (nk === 'epic')) headerMap.group = k;
+        if (!headerMap.start && (nk === 'start')) headerMap.start = k;
+        if (!headerMap.end && (nk === 'end')) headerMap.end = k;
+        if (!headerMap.status && (nk === 'status')) headerMap.status = k;
+        // Backward compatible headers
         if (!headerMap.task && (nk === 'taskname' || nk === 'task' || nk === 'task_name')) headerMap.task = k;
         if (!headerMap.group && (nk === 'groupname' || nk === 'group' || nk === 'group_name')) headerMap.group = k;
-        if (!headerMap.start && (nk === 'startdate' || nk === 'start' || nk === 'start_date')) headerMap.start = k;
-        if (!headerMap.end && (nk === 'enddate' || nk === 'end' || nk === 'end_date' || nk === 'finishdate' || nk === 'finish')) headerMap.end = k;
+        if (!headerMap.start && (nk === 'startdate' || nk === 'start_date')) headerMap.start = k;
+        if (!headerMap.end && (nk === 'enddate' || nk === 'end_date' || nk === 'finishdate' || nk === 'finish')) headerMap.end = k;
     }
 
     if (!headerMap.task || !headerMap.group || !headerMap.start || !headerMap.end) {
-        showNotification('Missing required headers: Task_Name, group_name, start_date, end_date', 'error');
+        showNotification('Missing required headers. Expected: epic, activity, start, end (status optional).', 'error');
         return;
     }
 
     let imported = 0;
     let idBase = Date.now();
     for (const row of rows) {
-        const name = String(row[headerMap.task] || '').trim();
-        const groupName = String(row[headerMap.group] || '').trim() || 'Ungrouped';
+        const name = String(row[headerMap.task] || '').trim(); // activity
+        const groupName = String(row[headerMap.group] || '').trim() || 'Ungrouped'; // epic
         const startUS = String(row[headerMap.start] || '').trim();
         const endUS = String(row[headerMap.end] || '').trim();
+        const statusRaw = headerMap.status ? String(row[headerMap.status] || '').trim() : '';
 
         if (!name || !startUS || !endUS) continue;
 
@@ -1252,14 +1262,18 @@ function processImportedRows(rows) {
         if (!startISO || !endISO) continue;
         if (new Date(startISO) > new Date(endISO)) continue;
 
-        const color = groups[groupName]?.color || '#667eea';
+        // Normalize status to one of the known keys, fallback to 'Not Started'
+        const knownStatuses = Object.keys(STATUS_COLORS || {});
+        const status = (knownStatuses.find(s => s.toLowerCase() === statusRaw.toLowerCase()) || 'Not Started');
+        const color = STATUS_COLORS[status] || groups[groupName]?.color || '#667eea';
         const task = {
             id: idBase++,
             name,
             group: groupName,
             startDate: startISO,
             endDate: endISO,
-            color
+            color,
+            status
         };
         tasks.push(task);
 
