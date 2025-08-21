@@ -582,7 +582,7 @@ transform: rotate(-90deg);
   left: 50%; /* centered under the line */
   transform: translateX(-50%);
   display: inline-block;
-  background: #1a614b; /* requested badge color */
+  background: #0c21e1; /* requested badge color */
   color: #fff;
   border: 1px solid rgba(0,0,0,0.08);
   box-shadow: 0 1px 4px rgba(0,0,0,0.15);
