@@ -611,6 +611,36 @@ transform: rotate(-90deg);
   cursor: pointer;
 }
 
+/* Today marker (red, dotted) */
+.today-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none; /* purely visual */
+}
+.today-line {
+  position: absolute;
+  top: 24px; /* align with milestone lines start */
+  bottom: 0;
+  left: 0;
+  width: 0;
+  border-left: 2px dotted #e53935; /* red dotted */
+}
+
+.today-label {
+  position: absolute;
+  bottom: -28px; /* lower under the line */
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  line-height: 1;
+  color: #e53935;
+  font-weight: 700;
+  background: transparent;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 /* High-contrast theme tweaks if needed */
 @media (prefers-contrast: more) {
   .milestone-line { border-left-color: rgba(60,60,60,0.9); border-left-style: dotted; }

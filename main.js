@@ -205,6 +205,37 @@ function renderMilestonesOverlay() {
     return items;
 }
 
+// Render a red dotted "today" vertical marker across the chart body
+function renderTodayMarker() {
+    if (!chartMinDate || !chartMaxDate) return '';
+    // Normalize today to local Y-M-D (strip time)
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    // Only show if today falls within the current chart bounds
+    if (today < chartMinDate || today > chartMaxDate) return '';
+
+    const months = getMonthRange(chartMinDate, chartMaxDate);
+    const totalMonths = Math.max(1, months.length);
+    const monthWidth = 100 / totalMonths;
+
+    const y = today.getFullYear();
+    const m = today.getMonth() + 1; // 1-based month to match months[] model
+    const d = today.getDate();
+    const monthIndex = months.findIndex(mm => mm.year === y && mm.month === m);
+    if (monthIndex === -1) return '';
+
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const startOffset = ((d - 1) / daysInMonth) * monthWidth;
+    const left = Math.max(0, Math.min(100, (monthIndex * monthWidth) + startOffset));
+
+    return `
+        <div class="today-marker" style="left:${left}%">
+            <div class="today-line"></div>
+            <div class="today-label" title="Today">Today</div>
+        </div>
+    `;
+}
+
 // Click handling for milestones (open edit modal)
 function setupMilestoneInteractions() {
     const chartContainer = document.getElementById('ganttChart');
@@ -2498,7 +2529,7 @@ function updateChart() {
             </div>
         </div>
         <div class="chart-body">
-            <div class="milestones-overlay">${renderMilestonesOverlay()}</div>
+            <div class="milestones-overlay">${renderMilestonesOverlay()}${renderTodayMarker()}</div>
             ${createGroupChartHTML(months)}
         </div>
     `;
