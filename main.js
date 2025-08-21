@@ -73,6 +73,33 @@ const STATUS_COLORS = {
     'Completed': '#00B4D8'
 };
 
+// Auto-derive a group's status from its tasks by priority
+// Priority (highest to lowest): Blocked > Action Needed > Delayed > In Progress > Completed > Not Started
+function deriveGroupStatusFromTasks(groupName) {
+    const groupTasks = tasks.filter(t => t.group === groupName);
+    if (groupTasks.length === 0) return undefined; // leave as-is if no tasks
+
+    const statuses = new Set(groupTasks.map(t => t.status || 'Not Started'));
+    if (statuses.has('Blocked')) return 'Blocked';
+    if (statuses.has('Action Needed')) return 'Action Needed';
+    if (statuses.has('Delayed')) return 'Delayed';
+    if (statuses.has('In Progress')) return 'In Progress';
+    // If every task is Completed -> Completed; else default Not Started
+    const allCompleted = groupTasks.every(t => (t.status || 'Not Started') === 'Completed');
+    return allCompleted ? 'Completed' : 'Not Started';
+}
+
+function applyAutoGroupStatus(groupName, { notify = false } = {}) {
+    if (!groups[groupName]) return;
+    const auto = deriveGroupStatusFromTasks(groupName);
+    if (!auto) return;
+    if (groups[groupName].status !== auto) {
+        groups[groupName].status = auto;
+        groups[groupName].color = STATUS_COLORS[auto] || '#808080';
+        if (notify) showNotification(`Group "${groupName}" status updated to ${auto}`, 'info');
+    }
+}
+
 function syncStatusSelection(selectId, chipId, colorInputId, previewId) {
     const sel = document.getElementById(selectId);
     const chip = document.getElementById(chipId);
@@ -1222,6 +1249,9 @@ function processImportedRows(rows) {
         };
         tasks.push(task);
 
+    // Auto-create/refresh group status from tasks
+    applyAutoGroupStatus(groupName);
+
         if (!groups[groupName]) {
             groups[groupName] = { name: groupName, color };
             groupStates[groupName] = true;
@@ -1611,6 +1641,8 @@ function confirmAddTaskModal() {
         groupStates[groupName] = true;
         groupOrder.push(groupName);
     }
+    // Auto-derive group status based on tasks
+    applyAutoGroupStatus(groupName);
 
     markAsChanged();
     updateGroupsList();
@@ -1624,6 +1656,8 @@ function updateTaskStatus(taskId, status) {
     if (!t) return;
     t.status = status;
     t.color = STATUS_COLORS[status] || '#808080';
+    // Auto-sync owning group status from tasks
+    if (t.group) applyAutoGroupStatus(t.group);
     markAsChanged();
     updateGroupsList();
     updateChart();
@@ -1890,6 +1924,9 @@ function deleteTask(taskId) {
         delete groups[task.group];
         delete groupStates[task.group];
         groupOrder = groupOrder.filter(g => g !== task.group);
+    } else {
+        // Recompute remaining group's status
+        applyAutoGroupStatus(task.group);
     }
 
     markAsChanged();
@@ -1957,6 +1994,9 @@ function updateTaskField(taskId, field, value) {
             delete groupStates[oldGroup];
             groupOrder = groupOrder.filter(g => g !== oldGroup);
         }
+        // Recompute statuses for both groups
+        if (oldGroup && groups[oldGroup]) applyAutoGroupStatus(oldGroup);
+        if (newGroup && groups[newGroup]) applyAutoGroupStatus(newGroup);
     }
 
     markAsChanged();
@@ -2407,6 +2447,7 @@ function updateChart() {
     // Re-bind interactions after re-render
     setupTaskResizeInteractions();
     setupMilestoneInteractions();
+    setupStatusContextMenu();
 }
 
 // Utilities for date math and mapping
@@ -2417,10 +2458,147 @@ function dateToISO(d) {
     return `${yyyy}-${mm}-${dd}`;
 }
 function addDays(d, n) {
-    const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    x.setDate(x.getDate() + n);
-    return x;
+    const nd = new Date(d);
+    nd.setDate(nd.getDate() + n);
+    return nd;
 }
+
+// Context menu for setting status on right-click over task/group bars
+let statusMenuEl = null;
+let statusMenuContext = null; // { type: 'task'|'group', taskId?, groupName? }
+let statusMenuBound = false;
+const STATUS_LIST = ['Not Started','In Progress','Delayed','Blocked','Action Needed','Completed'];
+function setupStatusContextMenu() {
+    const chart = document.getElementById('ganttChart');
+    if (!chart) return;
+
+    // Build menu element once
+    if (!statusMenuEl) {
+        statusMenuEl = document.createElement('div');
+        statusMenuEl.id = 'statusContextMenu';
+        statusMenuEl.className = 'status-context-menu';
+        statusMenuEl.style.display = 'none';
+        statusMenuEl.setAttribute('role', 'menu');
+        // innerHTML populated per-show to highlight current
+        document.body.appendChild(statusMenuEl);
+
+        statusMenuEl.addEventListener('click', (e) => {
+            const item = e.target.closest('.item');
+            if (!item || !statusMenuContext) return;
+            const val = item.getAttribute('data-status');
+            if (statusMenuContext.type === 'task') {
+                updateTaskStatus(statusMenuContext.taskId, val);
+            } else if (statusMenuContext.type === 'group') {
+                updateGroupStatus(statusMenuContext.groupName, val);
+            }
+            hideStatusMenu();
+        });
+        statusMenuEl.addEventListener('keydown', (e) => {
+            const items = Array.from(statusMenuEl.querySelectorAll('.item'));
+            if (items.length === 0) return;
+            const active = document.activeElement && document.activeElement.classList.contains('item')
+                ? document.activeElement : null;
+            let idx = active ? items.indexOf(active) : -1;
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                idx = (idx + 1 + items.length) % items.length;
+                items[idx].focus();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                idx = (idx - 1 + items.length) % items.length;
+                items[idx].focus();
+            } else if (e.key === 'Home') {
+                e.preventDefault(); items[0].focus();
+            } else if (e.key === 'End') {
+                e.preventDefault(); items[items.length - 1].focus();
+            } else if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const focusEl = document.activeElement && document.activeElement.classList.contains('item') ? document.activeElement : null;
+                if (focusEl) focusEl.click();
+            } else if (e.key === 'Escape') {
+                e.preventDefault(); hideStatusMenu();
+            }
+        });
+    }
+
+    function buildMenuHTML(current) {
+        return STATUS_LIST.map(s => {
+            const hex = STATUS_COLORS[s] || '#808080';
+            const selected = (s === current);
+            return `
+                <div class="item${selected ? ' selected' : ''}" role="menuitem" tabindex="0" data-status="${s}">
+                    <span class="chip" style="--chip:${hex}"></span>
+                    <span class="label">${s}</span>
+                    <span class="check" aria-hidden="true">✓</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function showStatusMenu(x, y, ctx) {
+        statusMenuContext = ctx;
+        // Determine current status for highlighting
+        let current = null;
+        if (ctx.type === 'task') {
+            const t = tasks.find(tt => tt.id === ctx.taskId);
+            current = t ? (t.status || 'Not Started') : null;
+        } else if (ctx.type === 'group') {
+            const g = groups[ctx.groupName];
+            current = g ? (g.status || 'Not Started') : null;
+        }
+        statusMenuEl.innerHTML = buildMenuHTML(current);
+        statusMenuEl.style.left = Math.max(0, x) + 'px';
+        statusMenuEl.style.top = Math.max(0, y) + 'px';
+        statusMenuEl.style.display = 'block';
+        // Ensure within viewport
+        requestAnimationFrame(() => {
+            const rect = statusMenuEl.getBoundingClientRect();
+            let nx = rect.left, ny = rect.top;
+            if (rect.right > window.innerWidth) nx = Math.max(0, window.innerWidth - rect.width - 8);
+            if (rect.bottom > window.innerHeight) ny = Math.max(0, window.innerHeight - rect.height - 8);
+            statusMenuEl.style.left = nx + 'px';
+            statusMenuEl.style.top = ny + 'px';
+            // Focus selected or first item for keyboard navigation
+            const items = Array.from(statusMenuEl.querySelectorAll('.item'));
+            const sel = statusMenuEl.querySelector('.item.selected') || items[0];
+            if (sel) sel.focus();
+        });
+        // Dismiss listeners
+        window.addEventListener('click', onAnyClickDismiss, { once: true });
+        window.addEventListener('contextmenu', onAnyClickDismiss, { once: true });
+        window.addEventListener('resize', hideStatusMenu, { once: true });
+        window.addEventListener('scroll', hideStatusMenu, { once: true });
+        window.addEventListener('keydown', onEscDismiss, { once: true });
+    }
+
+    function hideStatusMenu() {
+        if (statusMenuEl) statusMenuEl.style.display = 'none';
+        statusMenuContext = null;
+    }
+    function onAnyClickDismiss() { hideStatusMenu(); }
+    function onEscDismiss(e) { if (e.key === 'Escape') hideStatusMenu(); }
+
+    // Delegate right-click on bars (listen on document to ensure capture even in headers)
+    if (!statusMenuBound) {
+        document.addEventListener('contextmenu', (e) => {
+            const taskBar = e.target.closest('.task-bar');
+            const groupBar = e.target.closest('.group-bar');
+            const anyGroupEl = e.target.closest('[data-group]');
+            if (!taskBar && !groupBar && !anyGroupEl) return; // let default context menu elsewhere
+            e.preventDefault();
+            e.stopPropagation();
+            if (taskBar) {
+                const id = parseInt(taskBar.getAttribute('data-task-id'), 10);
+                showStatusMenu(e.clientX, e.clientY, { type: 'task', taskId: id });
+            } else {
+                const name = (groupBar && groupBar.getAttribute('data-group')) || (anyGroupEl && anyGroupEl.getAttribute('data-group'));
+                if (name) showStatusMenu(e.clientX, e.clientY, { type: 'group', groupName: name });
+            }
+        });
+        statusMenuBound = true;
+    }
+}
+
 function clampDate(d, minD, maxD) {
     if (d < minD) return new Date(minD.getFullYear(), minD.getMonth(), minD.getDate());
     if (d > maxD) return new Date(maxD.getFullYear(), maxD.getMonth(), maxD.getDate());
@@ -2641,6 +2819,13 @@ function createGroupChartHTML(months) {
         const groupBarHTML = groupStart && groupEnd ? 
             createGroupBar(groupStart, groupEnd, months, groupName) : '';
 
+        // Grid lines for group collapsed timeline (align with task rows)
+        const groupGridLines = months.slice(1).map((m, idx) => {
+            const pos = ((idx + 1) * 100 / months.length);
+            const isQuarter = (m.month === 4 || m.month === 7 || m.month === 10 || m.month === 1);
+            return `<div class="${isQuarter ? 'qline' : 'vline'}" style="left: ${pos}%"></div>`;
+        }).join('');
+
         const tasksHTML = isExpanded ? groupTasks.map(task => 
             createTaskRow(task, months)
         ).join('') : '';
@@ -2685,7 +2870,7 @@ function createGroupChartHTML(months) {
                             </div>
                         </div>
                     </div>
-                    ${!isExpanded ? `<div class=\"chart-group-timeline\">${groupBarHTML}</div>` : ``}
+                    ${!isExpanded ? `<div class=\"chart-group-timeline\">\n                        <div class=\"timeline-grid\" aria-hidden=\"true\">${groupGridLines}</div>\n                        ${groupBarHTML}\n                    </div>` : ``}
                 </div>
                 <div class="chart-group-tasks ${isExpanded ? '' : 'collapsed'}">
                     ${tasksHTML}
@@ -2736,7 +2921,7 @@ function createGroupBar(startDate, endDate, months, groupName) {
     const groupColor = groups[groupName]?.color || '#667eea';
 
     return `
-        <div class="group-bar" 
+        <div class="group-bar" data-group="${groupName}"
              style="left: ${left}%; width: ${width}%; background: linear-gradient(45deg, ${groupColor}, ${adjustBrightness(groupColor, -20)});"
              title="${groupName}: ${formatDate(startDate)} - ${formatDate(endDate)} (${duration} day${duration !== 1 ? 's' : ''})">
         </div>
@@ -2787,7 +2972,8 @@ function createTaskRow(task, months) {
 
     const gridLines = months.slice(1).map((m, idx) => {
         const pos = ((idx + 1) * 100 / months.length);
-        const isQuarter = ((m.month - 1) % 3 === 0);
+        // Fiscal quarters: Q1=Apr-Jun (4-6), Q2=Jul-Sep (7-9), Q3=Oct-Dec (10-12), Q4=Jan-Mar (1-3)
+        const isQuarter = (m.month === 4 || m.month === 7 || m.month === 10 || m.month === 1);
         return `<div class="${isQuarter ? 'qline' : 'vline'}" style="left: ${pos}%"></div>`;
     }).join('');
 

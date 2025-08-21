@@ -738,7 +738,7 @@ transform: rotate(-90deg);
     background: linear-gradient(135deg, #f8f9fa, #e9ecef);
     border-radius: 8px;
     overflow: hidden;
-    pointer-events: none; /* clicks ignored */
+    pointer-events: auto; /* allow interactions inside (group bars) */
 }
 
 .chart-group-tasks {
@@ -776,6 +776,66 @@ transform: rotate(-90deg);
     background-color: rgba(102, 126, 234, 0.1);
     border: 2px dashed #667eea;
     transform: translateY(-2px);
+}
+
+.drop-zone {
+    min-height: 20px;
+    transition: all 0.3s ease;
+    border-radius: 8px;
+}
+
+.drop-zone.drag-over {
+    background-color: rgba(102, 126, 234, 0.1);
+    border: 2px dashed #667eea;
+    transform: translateY(-2px);
+}
+
+.status-context-menu {
+    position: fixed;
+    z-index: 3000;
+    min-width: 180px;
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.08);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    border-radius: 10px;
+    padding: 6px;
+    backdrop-filter: blur(6px);
+}
+.status-context-menu .item {
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #2c3e50;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    outline: none;
+}
+.status-context-menu .item:hover {
+    background: rgba(102,126,234,0.08);
+}
+.status-context-menu .item:focus-visible {
+    outline: 2px solid rgba(102,126,234,0.4);
+    outline-offset: 2px;
+}
+.status-context-menu .chip {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--chip, #808080);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.08) inset;
+}
+.status-context-menu .label {
+    flex: 1 1 auto;
+}
+.status-context-menu .check {
+    color: #667eea;
+    opacity: 0;
+    transition: opacity .15s ease;
+}
+.status-context-menu .item.selected .check {
+    opacity: 1;
 }
 
 .task-label {
@@ -944,7 +1004,8 @@ transform: rotate(-90deg);
     border-radius: 12px;
     opacity: 0.8;
     box-shadow: 0 3px 10px rgba(102, 126, 234, 0.3);
-    z-index: 1; /* ensure bar is drawn above the background */
+    z-index: 6; /* above overlays like milestones-overlay (z=4) */
+    pointer-events: auto; /* ensure it receives right-clicks */
 }
 
 .no-tasks {
