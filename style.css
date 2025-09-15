@@ -759,8 +759,6 @@ transform: rotate(-90deg);
 
 .task-label-text {
     flex: 1;
-
-    
     overflow: hidden;
     text-overflow: ellipsis;
     /* Allow up to two lines, then ellipsis */
