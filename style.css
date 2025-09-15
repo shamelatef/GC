@@ -761,7 +761,12 @@ transform: rotate(-90deg);
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    /* Allow up to two lines, then ellipsis */
+    display: -webkit-box;
+    line-clamp: 2; /* standard property for supporting engines */
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal;
 }
 
 @keyframes fadeIn {
