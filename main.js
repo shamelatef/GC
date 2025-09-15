@@ -13,6 +13,93 @@ let previousGroupInputs = new Set();
 // Drag/resize state for task bars
 let taskDragState = null; // { type: 'move'|'resize', side?: 'left'|'right', taskId, startX, chartMin, chartMax, pxPerDay, origStart, origEnd, barEl, trackEl, trackRect }
 
+// Export a 16:9 PNG (1920x1080) with ALL tasks visible by vertically fitting content
+function saveChartForPPTFitAll() {
+    const exportRoot = document.querySelector('.container');
+    const target = document.querySelector('.chart-container') || document.getElementById('ganttChart');
+    if (!target) {
+        showNotification('Nothing to export yet', 'error');
+        return;
+    }
+
+    // Snapshot current group expansion state and expand all to ensure all tasks are visible
+    const prevStates = { ...groupStates };
+    try {
+        Object.keys(groups || {}).forEach(g => { groupStates[g] = true; });
+        updateChart();
+    } catch (_) {}
+
+    // Next frame, measure and apply vertical fit transform, then export
+    requestAnimationFrame(() => {
+        try {
+            exportRoot.classList.add('export-mode', 'ppt-export');
+            // Measure full content height of the chart area
+            const rect = target.getBoundingClientRect();
+            const contentHeight = Math.max(rect.height, target.scrollHeight || 0);
+            const OUT_W = 1920;
+            const OUT_H = 1080;
+            // Compute vertical scale to fit content height into 1080px
+            const scaleY = contentHeight > 0 ? Math.min(1, OUT_H / contentHeight) : 1;
+            // Apply only vertical scaling; keep width natural
+            const prevTransform = target.style.transform || '';
+            const prevTransformOrigin = target.style.transformOrigin || '';
+            target.style.transformOrigin = 'top left';
+            target.style.transform = `${prevTransform ? prevTransform + ' ' : ''}scaleY(${scaleY})`;
+
+            html2canvas(target, {
+                backgroundColor: null,
+                scale: window.devicePixelRatio > 1 ? 2 : 2,
+                useCORS: true,
+                logging: false
+            }).then(canvas => {
+                // Draw onto an exact 1920x1080 canvas with letterboxing
+                const OUT_CANVAS = document.createElement('canvas');
+                OUT_CANVAS.width = OUT_W;
+                OUT_CANVAS.height = OUT_H;
+                const ctx = OUT_CANVAS.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                try { ctx.fillStyle = getComputedStyle(document.body).backgroundColor || '#ffffff'; } catch (_) {}
+                ctx.fillRect(0, 0, OUT_W, OUT_H);
+                const scale = Math.min(OUT_W / canvas.width, OUT_H / canvas.height);
+                const drawW = Math.max(1, Math.round(canvas.width * scale));
+                const drawH = Math.max(1, Math.round(canvas.height * scale));
+                const dx = Math.floor((OUT_W - drawW) / 2);
+                const dy = Math.floor((OUT_H - drawH) / 2);
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(canvas, dx, dy, drawW, drawH);
+
+                const link = document.createElement('a');
+                const ts = new Date().toISOString().replace(/[:.]/g, '-');
+                link.download = `gantt-ppt-fit-all-${ts}.png`;
+                link.href = OUT_CANVAS.toDataURL('image/png');
+                link.click();
+                showNotification('Exported for PPT (fit all tasks)', 'success');
+            }).catch(err => {
+                console.error('Export failed:', err);
+                showNotification('Export for PPT failed', 'error');
+            }).finally(() => {
+                // Cleanup transform and classes
+                try {
+                    target.style.transform = prevTransform;
+                    target.style.transformOrigin = prevTransformOrigin;
+                    exportRoot.classList.remove('export-mode', 'ppt-export');
+                } catch (_) {}
+                // Restore prior group expansion and re-render
+                try {
+                    Object.keys(prevStates).forEach(g => { groupStates[g] = prevStates[g]; });
+                    updateChart();
+                } catch (_) {}
+            });
+        } catch (e) {
+            console.error(e);
+            showNotification('Export for PPT failed', 'error');
+            try { exportRoot.classList.remove('export-mode', 'ppt-export'); } catch (_) {}
+            try { Object.keys(prevStates).forEach(g => { groupStates[g] = prevStates[g]; }); updateChart(); } catch (_) {}
+        }
+    });
+}
+
 // Prevent single-click toggle from firing when a double-click rename is intended
 const groupClickTimers = new Map();
 function onGroupHeaderClick(event, groupName) {

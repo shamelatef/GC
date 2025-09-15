@@ -763,8 +763,8 @@ transform: rotate(-90deg);
     text-overflow: ellipsis;
     /* Allow up to two lines, then ellipsis */
     display: -webkit-box;
-    line-clamp: 2; /* standard property for supporting engines */
-    -webkit-line-clamp: 2;
+    line-clamp: 5; /* standard property for supporting engines */
+    -webkit-line-clamp: 5;
     -webkit-box-orient: vertical;
     white-space: normal;
 }
@@ -782,6 +782,42 @@ transform: rotate(-90deg);
 /* Hide kebab menus in exported PNGs */
 .export-mode .kebab-menu {
     display: none !important;
+}
+
+/* Compact styles for PPT export: reduce vertical space so more rows fit */
+.ppt-export .task-label {
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    border-left-width: 4px;
+    margin-bottom: 4px;
+}
+.ppt-export .task-label-text {
+    /* during export, clamp to 2 lines for compactness */
+    line-clamp: 2;
+    -webkit-line-clamp: 2;
+}
+.ppt-export .chart-row {
+    min-height: 26px;
+    margin-bottom: 4px;
+}
+.ppt-export .timeline-track {
+    height: 18px;
+}
+.ppt-export .task-bar {
+    height: 18px;
+    font-size: 11px;
+}
+.ppt-export .group-bar {
+    height: 18px;
+}
+.ppt-export .chart-group-label {
+    padding: 6px 10px 6px 20px;
+}
+.ppt-export .group-label-text {
+    /* keep single line for groups during export */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .chart-group-timeline {
