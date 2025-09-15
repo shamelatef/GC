@@ -339,9 +339,11 @@ body {
 }
 
 .task-name {
-    font-weight: 600;
-    color: #2c3e50;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
+
 
 .task-dates {
     color: #7f8c8d;
