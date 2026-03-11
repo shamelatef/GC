@@ -2608,7 +2608,7 @@ function updateChart() {
 
     const chartHTML = `
         <div class="chart-header">
-            <div class="chart-title">Epics & Activities</div>
+            <div class="chart-title">Sprints & Activities</div>
             <div class="timeline-container">
                 <div class="timeline-quarters">${quartersHTML}</div>
                 <div class="timeline-months">${monthsHTML}</div>
